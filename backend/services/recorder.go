@@ -75,8 +75,12 @@ func (s *RecorderService) Start(streamID uint, task *models.RecordTask) error {
 
 	s.db.Model(&stream).Update("status", "recording")
 
+	if err := cmd.Start(); err != nil {
+		delete(s.streams, streamID)
+		return fmt.Errorf("start ffmpeg: %w", err)
+	}
+
 	go s.watchProcess(sp)
-	go cmd.Run()
 
 	return nil
 }
