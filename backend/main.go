@@ -55,20 +55,16 @@ func main() {
 	r := routes.Setup(db, cfg, recorder, scheduler, monitor)
 
 	staticFS, _ := fs.Sub(staticFiles, "embed/dist")
-	readStatic := func(name string) ([]byte, string, error) {
+	readStatic := func(name string) ([]byte, error) {
 		f, err := staticFS.Open(name)
 		if err != nil {
-			return nil, "", err
+			return nil, err
 		}
 		defer f.Close()
-		data, err := io.ReadAll(f)
-		if err != nil {
-			return nil, "", err
-		}
-		return data, name, nil
+		return io.ReadAll(f)
 	}
 	r.GET("/", func(c *gin.Context) {
-		data, _, err := readStatic("index.html")
+		data, err := readStatic("index.html")
 		if err != nil {
 			c.String(http.StatusNotFound, "not found")
 			return
@@ -77,7 +73,7 @@ func main() {
 	})
 	r.GET("/assets/*filepath", func(c *gin.Context) {
 		fpath := "assets" + c.Param("filepath")
-		data, _, err := readStatic(fpath)
+		data, err := readStatic(fpath)
 		if err != nil {
 			c.String(http.StatusNotFound, "not found")
 			return
@@ -93,7 +89,7 @@ func main() {
 			c.JSON(404, gin.H{"code": 1, "message": "not found"})
 			return
 		}
-		data, _, err := readStatic("index.html")
+		data, err := readStatic("index.html")
 		if err != nil {
 			c.String(http.StatusNotFound, "not found")
 			return
