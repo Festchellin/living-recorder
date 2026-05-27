@@ -2,9 +2,12 @@ package main
 
 import (
 	"embed"
+	"io"
 	"io/fs"
 	"log"
+	"mime"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"living-recorder/backend/config"
@@ -52,21 +55,50 @@ func main() {
 	r := routes.Setup(db, cfg, recorder, scheduler, monitor)
 
 	staticFS, _ := fs.Sub(staticFiles, "embed/dist")
-	fileServer := http.FileServer(http.FS(staticFS))
+	readStatic := func(name string) ([]byte, string, error) {
+		f, err := staticFS.Open(name)
+		if err != nil {
+			return nil, "", err
+		}
+		defer f.Close()
+		data, err := io.ReadAll(f)
+		if err != nil {
+			return nil, "", err
+		}
+		return data, name, nil
+	}
 	r.GET("/", func(c *gin.Context) {
-		c.Request.URL.Path = "/index.html"
-		fileServer.ServeHTTP(c.Writer, c.Request)
+		data, _, err := readStatic("index.html")
+		if err != nil {
+			c.String(http.StatusNotFound, "not found")
+			return
+		}
+		c.Data(http.StatusOK, "text/html; charset=utf-8", data)
 	})
 	r.GET("/assets/*filepath", func(c *gin.Context) {
-		fileServer.ServeHTTP(c.Writer, c.Request)
+		fpath := "assets" + c.Param("filepath")
+		data, _, err := readStatic(fpath)
+		if err != nil {
+			c.String(http.StatusNotFound, "not found")
+			return
+		}
+		ctype := mime.TypeByExtension(filepath.Ext(c.Param("filepath")))
+		if ctype == "" {
+			ctype = "application/octet-stream"
+		}
+		c.Data(http.StatusOK, ctype, data)
 	})
 	r.NoRoute(func(c *gin.Context) {
 		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
 			c.JSON(404, gin.H{"code": 1, "message": "not found"})
 			return
 		}
-		c.Request.URL.Path = "/index.html"
-		fileServer.ServeHTTP(c.Writer, c.Request)
+		data, _, err := readStatic("index.html")
+		if err != nil {
+			c.String(http.StatusNotFound, "not found")
+			return
+		}
+		c.Data(http.StatusOK, "text/html; charset=utf-8", data)
 	})
 
 	addr := ":" + cfg.Server.Port

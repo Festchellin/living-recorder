@@ -10,7 +10,10 @@ import (
 )
 
 func Setup(db *gorm.DB, cfg *config.Config, recorder *services.RecorderService, scheduler *services.SchedulerService, monitor *services.MonitorService) *gin.Engine {
-	r := gin.Default()
+	r := gin.New()
+	r.RedirectFixedPath = false
+	r.RedirectTrailingSlash = false
+	r.Use(gin.Logger(), gin.Recovery())
 
 	streamHandler := handlers.NewStreamHandler(db, recorder)
 	taskHandler := handlers.NewTaskHandler(db, scheduler)
