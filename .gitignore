@@ -1,0 +1,27 @@
+# Binaries
+living-recorder.bin
+living-recorder
+
+# Temp / data / recordings
+temp/
+data/
+recordings/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Backend embed dist (built from frontend)
+backend/embed/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config override
+backend/config/config.yaml

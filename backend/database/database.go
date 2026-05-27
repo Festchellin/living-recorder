@@ -6,7 +6,7 @@ import (
 	"living-recorder/backend/config"
 	"living-recorder/backend/models"
 
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
