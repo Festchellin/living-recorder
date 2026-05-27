@@ -53,7 +53,10 @@ func (s *LocalStorage) Save(_ context.Context, srcPath, destPath string) error {
 	defer dstFile.Close()
 
 	_, err = io.Copy(dstFile, srcFile)
-	return err
+	if err != nil {
+		return fmt.Errorf("copy: %w", err)
+	}
+	return dstFile.Close()
 }
 
 func (s *LocalStorage) Delete(_ context.Context, path string) error {
@@ -94,6 +97,7 @@ func NewS3Storage(cfg config.S3StorageConfig) (*S3Storage, error) {
 	client, err := minio.New(cfg.Endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
 		Secure: false,
+		Region: cfg.Region,
 	})
 	if err != nil {
 		return nil, err
@@ -102,22 +106,30 @@ func NewS3Storage(cfg config.S3StorageConfig) (*S3Storage, error) {
 }
 
 func (s *S3Storage) Save(ctx context.Context, srcPath, destPath string) error {
-	_, err := s.client.FPutObject(ctx, s.bucket, destPath, srcPath, minio.PutObjectOptions{})
-	return err
+	if _, err := s.client.FPutObject(ctx, s.bucket, destPath, srcPath, minio.PutObjectOptions{}); err != nil {
+		return fmt.Errorf("s3 save: %w", err)
+	}
+	return nil
 }
 
 func (s *S3Storage) Delete(ctx context.Context, path string) error {
-	return s.client.RemoveObject(ctx, s.bucket, path, minio.RemoveObjectOptions{})
+	if err := s.client.RemoveObject(ctx, s.bucket, path, minio.RemoveObjectOptions{}); err != nil {
+		return fmt.Errorf("s3 delete: %w", err)
+	}
+	return nil
 }
 
 func (s *S3Storage) List(ctx context.Context, prefix string) ([]FileInfo, error) {
 	objects := s.client.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{Prefix: prefix})
 	infos := make([]FileInfo, 0)
 	for obj := range objects {
+		if obj.Err != nil {
+			return nil, obj.Err
+		}
 		infos = append(infos, FileInfo{
 			Path:  obj.Key,
 			Size:  obj.Size,
-			IsDir: obj.Key[len(obj.Key)-1] == '/',
+			IsDir: len(obj.Key) > 0 && obj.Key[len(obj.Key)-1] == '/',
 		})
 	}
 	return infos, nil
