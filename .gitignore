@@ -2,6 +2,9 @@
 living-recorder.bin
 living-recorder
 
+# Video test files
+video/
+
 # Temp / data / recordings
 temp/
 data/
@@ -10,9 +13,6 @@ recordings/
 # Frontend
 frontend/node_modules/
 frontend/dist/
-
-# Backend embed dist (built from frontend)
-backend/embed/dist/
 
 # IDE
 .idea/

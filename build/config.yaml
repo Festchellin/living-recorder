@@ -1,0 +1,26 @@
+server:
+  port: "8080"
+  mode: debug
+
+database:
+  driver: sqlite
+  path: ./data/living-recorder.db
+
+ffmpeg:
+  path: ffmpeg
+
+storage:
+  default: local
+  local:
+    path: ./recordings
+  s3:
+    endpoint: ""
+    access_key: ""
+    secret_key: ""
+    bucket: ""
+    region: ""
+
+recorder:
+  max_parallel: 10
+  restart_on_failure: 3
+  health_check_interval: 30

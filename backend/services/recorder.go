@@ -1,10 +1,11 @@
 package services
 
 import (
-	"context"
 	"fmt"
+	"io"
 	"living-recorder/backend/config"
 	"living-recorder/backend/models"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -18,7 +19,7 @@ type StreamProcess struct {
 	StreamID  uint
 	TaskID    uint
 	Cmd       *exec.Cmd
-	Cancel    context.CancelFunc
+	stdin     io.WriteCloser
 	StartedAt time.Time
 	Status    string
 }
@@ -60,14 +61,22 @@ func (s *RecorderService) Start(streamID uint, task *models.RecordTask) error {
 	}
 
 	args := s.buildFFmpegArgs(&stream, task)
-	ctx, cancel := context.WithCancel(context.Background())
-	cmd := exec.CommandContext(ctx, s.ffmpeg, args...)
+	outputPath := args[len(args)-1]
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+		return fmt.Errorf("create output dir: %w", err)
+	}
+	cmd := exec.Command(s.ffmpeg, args...)
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("stdin pipe: %w", err)
+	}
 
 	sp := &StreamProcess{
 		StreamID:  streamID,
 		TaskID:    task.ID,
 		Cmd:       cmd,
-		Cancel:    cancel,
+		stdin:     stdin,
 		StartedAt: time.Now(),
 		Status:    "recording",
 	}
@@ -88,15 +97,29 @@ func (s *RecorderService) Start(streamID uint, task *models.RecordTask) error {
 
 func (s *RecorderService) Stop(streamID uint) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	sp, exists := s.streams[streamID]
 	if !exists {
+		s.mu.Unlock()
 		return fmt.Errorf("stream %d is not recording", streamID)
 	}
-
-	sp.Cancel()
 	sp.Status = "stopping"
+	s.mu.Unlock()
+
+	sp.stdin.Write([]byte("q\n"))
+	sp.stdin.Close()
+
+	done := make(chan struct{})
+	go func() {
+		sp.Cmd.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		sp.Cmd.Process.Kill()
+		<-done
+	}
 
 	return nil
 }
@@ -136,6 +159,10 @@ func (s *RecorderService) buildFFmpegArgs(stream *models.Stream, task *models.Re
 	}
 
 	args = append(args, "-i", stream.URL)
+	if task.VideoCodec != "copy" {
+		args = append(args, "-vf", "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709")
+		args = append(args, "-pix_fmt", "yuv420p")
+	}
 	args = append(args, "-c:v", task.VideoCodec)
 
 	if task.VideoBitrate != "" {
@@ -160,6 +187,7 @@ func (s *RecorderService) buildFFmpegArgs(stream *models.Stream, task *models.Re
 		args = append(args, "-strftime", "1")
 	}
 
+	args = append(args, "-movflags", "+faststart")
 	outputPath := s.buildOutputPath(stream, task)
 	args = append(args, "-y", outputPath)
 
