@@ -58,8 +58,8 @@ func (s *MonitorService) RemoveClient(conn *websocket.Conn) {
 
 func (s *MonitorService) broadcast(msg StatusMessage) {
 	data, _ := json.Marshal(msg)
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for client := range s.clients {
 		if err := client.WriteMessage(websocket.TextMessage, data); err != nil {
 			log.Printf("ws write error: %v", err)
