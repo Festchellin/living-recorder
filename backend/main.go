@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"strings"
 
 	"living-recorder/backend/config"
 	"living-recorder/backend/database"
@@ -51,16 +52,21 @@ func main() {
 	r := routes.Setup(db, cfg, recorder, scheduler, monitor)
 
 	staticFS, _ := fs.Sub(staticFiles, "embed/dist")
+	fileServer := http.FileServer(http.FS(staticFS))
 	r.GET("/", func(c *gin.Context) {
-		http.FileServer(http.FS(staticFS)).ServeHTTP(c.Writer, c.Request)
+		c.Request.URL.Path = "/index.html"
+		fileServer.ServeHTTP(c.Writer, c.Request)
+	})
+	r.GET("/assets/*filepath", func(c *gin.Context) {
+		fileServer.ServeHTTP(c.Writer, c.Request)
 	})
 	r.NoRoute(func(c *gin.Context) {
-		if len(c.Request.URL.Path) >= 5 && c.Request.URL.Path[:5] == "/api/" {
+		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
 			c.JSON(404, gin.H{"code": 1, "message": "not found"})
 			return
 		}
 		c.Request.URL.Path = "/index.html"
-		http.FileServer(http.FS(staticFS)).ServeHTTP(c.Writer, c.Request)
+		fileServer.ServeHTTP(c.Writer, c.Request)
 	})
 
 	addr := ":" + cfg.Server.Port
