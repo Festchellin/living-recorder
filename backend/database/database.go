@@ -1,6 +1,8 @@
 package database
 
 import (
+	"fmt"
+
 	"living-recorder/backend/config"
 	"living-recorder/backend/models"
 
@@ -14,11 +16,13 @@ func Init(cfg config.DatabaseConfig) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	db.AutoMigrate(
+	if err := db.AutoMigrate(
 		&models.Stream{},
 		&models.RecordTask{},
 		&models.RecordLog{},
-	)
+	); err != nil {
+		return nil, fmt.Errorf("auto migrate: %w", err)
+	}
 
 	return db, nil
 }
