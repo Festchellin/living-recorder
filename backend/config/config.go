@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 
@@ -61,7 +62,12 @@ func Load() (*Config, error) {
 	v.AddConfigPath(".")
 	v.AddConfigPath("./config")
 
-	v.ReadInConfig()
+	if err := v.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			return nil, err
+		}
+		log.Printf("config file not found, using defaults")
+	}
 
 	setDefaults(v)
 	v.AutomaticEnv()
@@ -71,8 +77,14 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
-	os.MkdirAll(cfg.Storage.Local.Path, 0755)
-	os.MkdirAll(filepath.Dir(cfg.Database.Path), 0755)
+	if err := os.MkdirAll(cfg.Storage.Local.Path, 0755); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Dir(cfg.Database.Path), 0755); err != nil {
+		return nil, err
+	}
+
+	cfg.Recorder.StorageLocalPath = cfg.Storage.Local.Path
 
 	return &cfg, nil
 }
