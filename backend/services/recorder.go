@@ -77,6 +77,7 @@ func (s *RecorderService) Start(streamID uint, task *models.RecordTask) error {
 
 	if err := cmd.Start(); err != nil {
 		delete(s.streams, streamID)
+		s.db.Model(&stream).Update("status", "idle")
 		return fmt.Errorf("start ffmpeg: %w", err)
 	}
 
@@ -183,6 +184,7 @@ func (s *RecorderService) watchProcess(sp *StreamProcess) {
 	err := sp.Cmd.Wait()
 
 	s.mu.Lock()
+	wasStopping := sp.Status == "stopping"
 	delete(s.streams, sp.StreamID)
 	s.mu.Unlock()
 
@@ -195,7 +197,7 @@ func (s *RecorderService) watchProcess(sp *StreamProcess) {
 		EndedAt:   time.Now(),
 	}
 	if err != nil {
-		if sp.Status == "stopping" {
+		if wasStopping {
 			log.Status = "success"
 		} else {
 			log.Status = "failed"
