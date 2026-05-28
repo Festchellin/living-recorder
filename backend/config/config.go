@@ -52,6 +52,9 @@ type RecorderConfig struct {
 	MaxParallel          int    `mapstructure:"max_parallel"`
 	RestartOnFailure     int    `mapstructure:"restart_on_failure"`
 	HealthCheckInterval  int    `mapstructure:"health_check_interval"`
+	DefaultVideoCodec    string `mapstructure:"default_video_codec"`
+	DefaultAudioCodec    string `mapstructure:"default_audio_codec"`
+	DefaultOutputTemplate string `mapstructure:"default_output_template"`
 	StorageLocalPath     string // injected at runtime from storage.local.path
 }
 
@@ -100,4 +103,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("recorder.max_parallel", 10)
 	v.SetDefault("recorder.restart_on_failure", 3)
 	v.SetDefault("recorder.health_check_interval", 30)
+	v.SetDefault("recorder.default_video_codec", "copy")
+	v.SetDefault("recorder.default_audio_codec", "copy")
+	v.SetDefault("recorder.default_output_template", "{name}/{date}_{time}.mp4")
 }
