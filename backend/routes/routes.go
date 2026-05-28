@@ -30,6 +30,8 @@ func Setup(db *gorm.DB, cfg *config.Config, recorder *services.RecorderService, 
 		api.POST("/streams/:id/start", streamHandler.Start)
 		api.POST("/streams/:id/stop", streamHandler.Stop)
 		api.GET("/streams/:id/logs", streamHandler.Logs)
+		api.POST("/streams/start-all", streamHandler.StartAll)
+		api.POST("/streams/stop-all", streamHandler.StopAll)
 
 		api.GET("/tasks", taskHandler.List)
 		api.POST("/tasks", taskHandler.Create)

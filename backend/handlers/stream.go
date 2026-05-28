@@ -22,6 +22,9 @@ func NewStreamHandler(db *gorm.DB, recorder *services.RecorderService) *StreamHa
 func (h *StreamHandler) List(c *gin.Context) {
 	var streams []models.Stream
 	h.db.Find(&streams)
+	for i := range streams {
+		streams[i].Status = h.recorder.EffectiveStreamStatus(&streams[i])
+	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": streams})
 }
 
@@ -32,6 +35,7 @@ func (h *StreamHandler) Get(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": "stream not found"})
 		return
 	}
+	stream.Status = h.recorder.EffectiveStreamStatus(&stream)
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": stream})
 }
 
@@ -76,7 +80,12 @@ func (h *StreamHandler) Start(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
 	var task models.RecordTask
 	if err := h.db.Where("stream_id = ? AND enabled = ?", id, true).First(&task).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": "no enabled task found for stream"})
+		// No task configured, start with defaults (pass nil)
+		if err := h.recorder.Start(uint(id), nil); err != nil {
+			c.JSON(http.StatusConflict, gin.H{"code": 1, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"code": 0, "message": "recording started (defaults)"})
 		return
 	}
 	if err := h.recorder.Start(uint(id), &task); err != nil {
@@ -84,6 +93,16 @@ func (h *StreamHandler) Start(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "recording started"})
+}
+
+func (h *StreamHandler) StartAll(c *gin.Context) {
+	result := h.recorder.StartAll()
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": result})
+}
+
+func (h *StreamHandler) StopAll(c *gin.Context) {
+	result := h.recorder.StopAll()
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": result})
 }
 
 func (h *StreamHandler) Stop(c *gin.Context) {
