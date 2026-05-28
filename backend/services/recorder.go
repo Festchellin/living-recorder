@@ -24,13 +24,16 @@ type StreamProcess struct {
 	Status    string
 }
 
+type StatusChangeCallback func(streamID uint)
+
 type RecorderService struct {
-	db      *gorm.DB
-	cfg     config.RecorderConfig
-	ffmpeg  string
-	store   StorageBackend
-	mu      sync.RWMutex
-	streams map[uint]*StreamProcess
+	db             *gorm.DB
+	cfg            config.RecorderConfig
+	ffmpeg         string
+	store          StorageBackend
+	mu             sync.RWMutex
+	streams        map[uint]*StreamProcess
+	onStatusChange StatusChangeCallback
 }
 
 func NewRecorderService(db *gorm.DB, cfg config.RecorderConfig, ffmpegPath string, store StorageBackend) *RecorderService {
@@ -41,6 +44,14 @@ func NewRecorderService(db *gorm.DB, cfg config.RecorderConfig, ffmpegPath strin
 		store:   store,
 		streams: make(map[uint]*StreamProcess),
 	}
+}
+
+func (s *RecorderService) OnStatusChange(cb StatusChangeCallback) {
+	s.onStatusChange = cb
+}
+
+func (s *RecorderService) ResetStaleStatuses() {
+	s.db.Model(&models.Stream{}).Where("status = ?", "recording").Update("status", "idle")
 }
 
 func (s *RecorderService) Start(streamID uint, task *models.RecordTask) error {
@@ -58,6 +69,16 @@ func (s *RecorderService) Start(streamID uint, task *models.RecordTask) error {
 	var stream models.Stream
 	if err := s.db.First(&stream, streamID).Error; err != nil {
 		return fmt.Errorf("stream not found: %w", err)
+	}
+
+	if task == nil {
+		task = &models.RecordTask{
+			StreamID:       streamID,
+			OutputTemplate: s.cfg.DefaultOutputTemplate,
+			VideoCodec:     s.cfg.DefaultVideoCodec,
+			AudioCodec:     s.cfg.DefaultAudioCodec,
+			StorageType:    "local",
+		}
 	}
 
 	args := s.buildFFmpegArgs(&stream, task)
@@ -92,6 +113,10 @@ func (s *RecorderService) Start(streamID uint, task *models.RecordTask) error {
 
 	go s.watchProcess(sp)
 
+	if s.onStatusChange != nil {
+		go s.onStatusChange(streamID)
+	}
+
 	return nil
 }
 
@@ -121,7 +146,21 @@ func (s *RecorderService) Stop(streamID uint) error {
 		<-done
 	}
 
+	if s.onStatusChange != nil {
+		go s.onStatusChange(streamID)
+	}
+
 	return nil
+}
+
+func (s *RecorderService) EffectiveStreamStatus(stream *models.Stream) string {
+	s.mu.RLock()
+	sp, exists := s.streams[stream.ID]
+	s.mu.RUnlock()
+	if exists {
+		return sp.Status
+	}
+	return stream.Status
 }
 
 func (s *RecorderService) IsRecording(streamID uint) bool {
@@ -233,4 +272,8 @@ func (s *RecorderService) watchProcess(sp *StreamProcess) {
 		}
 	}
 	s.db.Create(&log)
+
+	if s.onStatusChange != nil {
+		go s.onStatusChange(sp.StreamID)
+	}
 }
