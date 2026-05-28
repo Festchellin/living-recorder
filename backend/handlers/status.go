@@ -22,14 +22,13 @@ func NewStatusHandler(db *gorm.DB, cfg *config.Config, recorder *services.Record
 
 func (h *StatusHandler) GetStatus(c *gin.Context) {
 	var totalStreams int64
-	var activeRecordings int64
 	var totalLogs int64
 	var totalSize int64
 
 	h.db.Model(&models.Stream{}).Count(&totalStreams)
-	h.db.Model(&models.Stream{}).Where("status = ?", "recording").Count(&activeRecordings)
 	h.db.Model(&models.RecordLog{}).Count(&totalLogs)
 	h.db.Model(&models.RecordLog{}).Select("COALESCE(SUM(file_size), 0)").Scan(&totalSize)
+	activeRecordings := int64(len(h.recorder.GetActiveStreams()))
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{
 		"total_streams":     totalStreams,

@@ -48,6 +48,9 @@ func main() {
 	scheduler := services.NewSchedulerService(db, recorder)
 	monitor := services.NewMonitorService(db, recorder, cfg.Recorder)
 
+	recorder.OnStatusChange(monitor.NotifyStreamChange)
+	recorder.ResetStaleStatuses()
+
 	scheduler.Start()
 	monitor.Start()
 
