@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button'
 const navItems = [
   { path: '/', label: 'Dashboard', icon: '📊' },
   { path: '/streams', label: 'Streams', icon: '📡' },
-  { path: '/tasks', label: 'Tasks', icon: '⏰' },
   { path: '/settings', label: 'Settings', icon: '⚙️' },
 ]
 
