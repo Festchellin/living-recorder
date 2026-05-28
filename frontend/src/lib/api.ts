@@ -74,6 +74,8 @@ export const api = {
     delete: (id: number) => request<void>(`/api/streams/${id}`, { method: 'DELETE' }),
     start: (id: number) => request<void>(`/api/streams/${id}/start`, { method: 'POST' }),
     stop: (id: number) => request<void>(`/api/streams/${id}/stop`, { method: 'POST' }),
+    startAll: () => request<{success: number; errors?: string[]}>('/api/streams/start-all', { method: 'POST' }),
+    stopAll: () => request<{success: number; errors?: string[]}>('/api/streams/stop-all', { method: 'POST' }),
     logs: (id: number) => request<RecordLog[]>(`/api/streams/${id}/logs`),
   },
   tasks: {

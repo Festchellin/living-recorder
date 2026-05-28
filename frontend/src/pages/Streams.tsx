@@ -29,11 +29,32 @@ export default function Streams() {
     load()
   }
 
+  const handleStartAll = async () => {
+    try {
+      await api.streams.startAll()
+    } catch (e) {
+      console.error('Start all failed', e)
+    }
+    load()
+  }
+
+  const handleStopAll = async () => {
+    try {
+      await api.streams.stopAll()
+    } catch (e) {
+      console.error('Stop all failed', e)
+    }
+    load()
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Streams</h2>
-        <Dialog open={open} onOpenChange={setOpen}>
+        <div className="flex gap-2">
+          <Button variant="default" onClick={handleStartAll}>▶ Start All</Button>
+          <Button variant="destructive" onClick={handleStopAll}>■ Stop All</Button>
+          <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button onClick={() => setEditing({ protocol: 'rtsp' })}>Add Stream</Button>
           </DialogTrigger>
@@ -65,6 +86,7 @@ export default function Streams() {
             </div>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
       <div className="grid grid-cols-3 gap-4">
         {streams.map((s) => (
