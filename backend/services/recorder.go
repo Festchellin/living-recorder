@@ -186,6 +186,53 @@ func (s *RecorderService) GetProcess(streamID uint) *StreamProcess {
 	return s.streams[streamID]
 }
 
+type BatchResult struct {
+	Success int      `json:"success"`
+	Errors  []string `json:"errors,omitempty"`
+}
+
+func (s *RecorderService) StartAll() BatchResult {
+	var streams []models.Stream
+	s.db.Where("enabled = ?", true).Find(&streams)
+
+	result := BatchResult{}
+	for _, stream := range streams {
+		if s.IsRecording(stream.ID) {
+			continue
+		}
+		if err := s.Start(stream.ID, nil); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", stream.Name, err))
+			continue
+		}
+		result.Success++
+	}
+	return result
+}
+
+func (s *RecorderService) StopAll() BatchResult {
+	s.mu.RLock()
+	active := make([]uint, 0, len(s.streams))
+	for id := range s.streams {
+		active = append(active, id)
+	}
+	s.mu.RUnlock()
+
+	result := BatchResult{}
+	for _, id := range active {
+		if err := s.Stop(id); err != nil {
+			var stream models.Stream
+			if s.db.First(&stream, id).Error == nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", stream.Name, err))
+			} else {
+				result.Errors = append(result.Errors, fmt.Sprintf("stream %d: %v", id, err))
+			}
+			continue
+		}
+		result.Success++
+	}
+	return result
+}
+
 func (s *RecorderService) buildFFmpegArgs(stream *models.Stream, task *models.RecordTask) []string {
 	args := []string{}
 
