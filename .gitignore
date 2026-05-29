@@ -25,3 +25,12 @@ Thumbs.db
 
 # Config override
 backend/config/config.yaml
+
+# Tooling
+.opencode/
+.superpowers/
+__pycache__/
+*.pyc
+
+# Build artifacts
+backend/build/

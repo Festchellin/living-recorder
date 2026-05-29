@@ -20,6 +20,11 @@ storage:
     bucket: ""
     region: ""
 
+mediamtx:
+  url: "http://localhost:8889"
+  rtmp_url: "rtmp://localhost:1935"
+  preview_retry: 60
+
 recorder:
   max_parallel: 10
   restart_on_failure: 3

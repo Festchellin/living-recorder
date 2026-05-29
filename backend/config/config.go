@@ -9,11 +9,14 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig   `mapstructure:"server"`
-	Database DatabaseConfig `mapstructure:"database"`
-	FFmpeg   FFmpegConfig   `mapstructure:"ffmpeg"`
-	Storage  StorageConfig  `mapstructure:"storage"`
-	Recorder RecorderConfig `mapstructure:"recorder"`
+	Server   ServerConfig    `mapstructure:"server"`
+	Database DatabaseConfig  `mapstructure:"database"`
+	FFmpeg   FFmpegConfig    `mapstructure:"ffmpeg"`
+	Storage  StorageConfig   `mapstructure:"storage"`
+	Recorder RecorderConfig  `mapstructure:"recorder"`
+
+	v       *viper.Viper
+	cfgFile string
 }
 
 type ServerConfig struct {
@@ -65,11 +68,14 @@ func Load() (*Config, error) {
 	v.AddConfigPath(".")
 	v.AddConfigPath("./config")
 
+	cfgFile := ""
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return nil, err
 		}
 		log.Printf("config file not found, using defaults")
+	} else {
+		cfgFile = v.ConfigFileUsed()
 	}
 
 	setDefaults(v)
@@ -79,6 +85,9 @@ func Load() (*Config, error) {
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, err
 	}
+
+	cfg.v = v
+	cfg.cfgFile = cfgFile
 
 	if err := os.MkdirAll(cfg.Storage.Local.Path, 0755); err != nil {
 		return nil, err
@@ -90,6 +99,23 @@ func Load() (*Config, error) {
 	cfg.Recorder.StorageLocalPath = cfg.Storage.Local.Path
 
 	return &cfg, nil
+}
+
+func (c *Config) Save() error {
+	if c.cfgFile == "" {
+		c.cfgFile = "config.yaml"
+	}
+
+	c.v.Set("server.port", c.Server.Port)
+	c.v.Set("server.mode", c.Server.Mode)
+	c.v.Set("ffmpeg.path", c.FFmpeg.Path)
+	c.v.Set("storage.default", c.Storage.Default)
+	c.v.Set("storage.local.path", c.Storage.Local.Path)
+	c.v.Set("recorder.max_parallel", c.Recorder.MaxParallel)
+	c.v.Set("recorder.restart_on_failure", c.Recorder.RestartOnFailure)
+	c.v.Set("recorder.health_check_interval", c.Recorder.HealthCheckInterval)
+
+	return c.v.WriteConfigAs(c.cfgFile)
 }
 
 func setDefaults(v *viper.Viper) {

@@ -18,6 +18,7 @@ func Setup(db *gorm.DB, cfg *config.Config, recorder *services.RecorderService, 
 	streamHandler := handlers.NewStreamHandler(db, recorder)
 	taskHandler := handlers.NewTaskHandler(db, scheduler)
 	statusHandler := handlers.NewStatusHandler(db, cfg, recorder)
+	groupHandler := handlers.NewGroupHandler(db)
 	wsHandler := handlers.NewWSHandler(monitor)
 
 	api := r.Group("/api")
@@ -30,8 +31,10 @@ func Setup(db *gorm.DB, cfg *config.Config, recorder *services.RecorderService, 
 		api.POST("/streams/:id/start", streamHandler.Start)
 		api.POST("/streams/:id/stop", streamHandler.Stop)
 		api.GET("/streams/:id/logs", streamHandler.Logs)
+		api.GET("/streams/:id/probe", streamHandler.Probe)
 		api.POST("/streams/start-all", streamHandler.StartAll)
 		api.POST("/streams/stop-all", streamHandler.StopAll)
+		api.GET("/preview/:id/ws", streamHandler.PreviewWS)
 
 		api.GET("/tasks", taskHandler.List)
 		api.POST("/tasks", taskHandler.Create)
@@ -41,6 +44,14 @@ func Setup(db *gorm.DB, cfg *config.Config, recorder *services.RecorderService, 
 		api.GET("/status", statusHandler.GetStatus)
 		api.GET("/config", statusHandler.GetConfig)
 		api.PUT("/config", statusHandler.UpdateConfig)
+
+		api.GET("/groups", groupHandler.List)
+		api.POST("/groups", groupHandler.Create)
+		api.PUT("/groups/reorder", groupHandler.Reorder)
+		api.PUT("/groups/:id", groupHandler.Update)
+		api.DELETE("/groups/:id", groupHandler.Delete)
+
+		api.GET("/logs/recent", streamHandler.RecentLogs)
 
 		api.GET("/ws", wsHandler.Handle)
 	}

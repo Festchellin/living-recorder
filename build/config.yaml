@@ -1,26 +1,29 @@
-server:
-  port: "8080"
-  mode: debug
-
 database:
-  driver: sqlite
-  path: ./data/living-recorder.db
-
+    driver: sqlite
+    path: ./data/living-recorder.db
 ffmpeg:
-  path: ffmpeg
-
-storage:
-  default: local
-  local:
-    path: ./recordings
-  s3:
-    endpoint: ""
-    access_key: ""
-    secret_key: ""
-    bucket: ""
-    region: ""
-
+    path: ffmpeg
+mediamtx:
+    preview_retry: 60
+    rtmp_url: rtmp://192.168.2.102:1935
+    url: http://192.168.2.102:8889
 recorder:
-  max_parallel: 10
-  restart_on_failure: 3
-  health_check_interval: 30
+    default_audio_codec: copy
+    default_output_template: '{name}/{date}_{time}.mp4'
+    default_video_codec: copy
+    health_check_interval: 30
+    max_parallel: 50
+    restart_on_failure: 3
+server:
+    mode: debug
+    port: "8080"
+storage:
+    default: local
+    local:
+        path: ./recordings
+    s3:
+        access_key: ""
+        bucket: ""
+        endpoint: ""
+        region: ""
+        secret_key: ""

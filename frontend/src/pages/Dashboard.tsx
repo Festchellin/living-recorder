@@ -1,59 +1,55 @@
 import { useEffect, useState } from 'react'
-import { api, Status, RecordLog } from '@/lib/api'
+import { api, Status } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Radio, Video } from 'lucide-react'
 
 export default function Dashboard() {
   const [status, setStatus] = useState<Status | null>(null)
-  const [recentLogs, setRecentLogs] = useState<RecordLog[]>([])
 
   useEffect(() => {
     api.status.get().then(setStatus)
-    api.streams.list().then((streams) => {
-      if (streams.length > 0) {
-        api.streams.logs(streams[0].id).then(setRecentLogs)
-      }
-    })
   }, [])
+
+  const stats = [
+    {
+      title: '总流媒体数',
+      value: status?.total_streams ?? '-',
+      icon: Radio,
+      gradient: 'from-iridescent-blue/20 to-iridescent-cyan/20',
+      iconColor: 'text-iridescent-blue',
+    },
+    {
+      title: '正在录制',
+      value: status?.active_recordings ?? '-',
+      icon: Video,
+      gradient: 'from-green-400/20 to-emerald-400/20',
+      iconColor: 'text-green-400',
+    },
+  ]
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold">Dashboard</h2>
-      <div className="grid grid-cols-4 gap-4">
-        <Card>
-          <CardHeader><CardTitle className="text-sm">Total Streams</CardTitle></CardHeader>
-          <CardContent><p className="text-2xl font-bold">{status?.total_streams ?? '-'}</p></CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle className="text-sm">Active Recordings</CardTitle></CardHeader>
-          <CardContent><p className="text-2xl font-bold text-green-600">{status?.active_recordings ?? '-'}</p></CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle className="text-sm">Total Recordings</CardTitle></CardHeader>
-          <CardContent><p className="text-2xl font-bold">{status?.total_recordings ?? '-'}</p></CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle className="text-sm">Storage Used</CardTitle></CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">
-              {status ? `${(status.storage_used / 1024 / 1024 / 1024).toFixed(2)} GB` : '-'}
-            </p>
-          </CardContent>
-        </Card>
+      <div className="flex items-center gap-3">
+        <h2 className="text-2xl font-bold text-white/90">仪表盘</h2>
+        <div className="h-px flex-1 bg-gradient-to-r from-white/10 to-transparent" />
       </div>
-      <div>
-        <h3 className="text-lg font-semibold mb-2">Recent Recordings</h3>
-        {recentLogs.length === 0 ? (
-          <p className="text-muted-foreground">No recordings yet</p>
-        ) : (
-          <div className="space-y-2">
-            {recentLogs.slice(0, 10).map((log) => (
-              <div key={log.id} className="flex justify-between items-center p-2 border rounded">
-                <span>{log.file_path}</span>
-                <span className="text-sm text-muted-foreground">{log.duration}s</span>
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="grid grid-cols-2 gap-4">
+        {stats.map((stat) => {
+          const Icon = stat.icon
+          return (
+            <Card key={stat.title}>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-white/60">{stat.title}</CardTitle>
+                <div className={`p-2 rounded-lg bg-gradient-to-br ${stat.gradient}`}>
+                  <Icon className={`h-4 w-4 ${stat.iconColor}`} />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-bold text-white/90">{stat.value}</p>
+              </CardContent>
+            </Card>
+          )
+        })}
       </div>
     </div>
   )

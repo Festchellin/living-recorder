@@ -17,6 +17,7 @@ func Init(cfg config.DatabaseConfig) (*gorm.DB, error) {
 	}
 
 	if err := db.AutoMigrate(
+		&models.Group{},
 		&models.Stream{},
 		&models.RecordTask{},
 		&models.RecordLog{},

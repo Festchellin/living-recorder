@@ -12,6 +12,7 @@ import (
 
 	"living-recorder/backend/config"
 	"living-recorder/backend/database"
+	"living-recorder/backend/models"
 	"living-recorder/backend/routes"
 	"living-recorder/backend/services"
 
@@ -44,12 +45,14 @@ func main() {
 		store = services.NewLocalStorage(cfg.Storage.Local)
 	}
 
-	recorder := services.NewRecorderService(db, cfg.Recorder, cfg.FFmpeg.Path, store)
+	logWriter := services.NewLogWriter(db)
+	recorder := services.NewRecorderService(db, &cfg.Recorder, cfg.FFmpeg.Path, store)
 	scheduler := services.NewSchedulerService(db, recorder)
 	monitor := services.NewMonitorService(db, recorder, cfg.Recorder)
 
 	recorder.OnStatusChange(monitor.NotifyStreamChange)
 	recorder.ResetStaleStatuses()
+	logWriter.Info(models.EventSystemStartup, "系统启动 — 端口=%s 录制目录=%s", cfg.Server.Port, cfg.Recorder.StorageLocalPath)
 
 	scheduler.Start()
 	monitor.Start()

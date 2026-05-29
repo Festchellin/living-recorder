@@ -74,5 +74,9 @@ func (h *StatusHandler) UpdateConfig(c *gin.Context) {
 	if input.HealthCheckInterval != nil {
 		h.cfg.Recorder.HealthCheckInterval = *input.HealthCheckInterval
 	}
+	if err := h.cfg.Save(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "save config: " + err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "config updated"})
 }
