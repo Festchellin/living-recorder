@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import mpegts from 'mpegts.js'
 
-export function useMpegtsPreview(streamId: number | null) {
+export interface PreviewConfig {
+  width: number
+  height: number
+  fps: number
+  crf: number
+}
+
+export function useMpegtsPreview(streamId: number | null, config?: PreviewConfig) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const playerRef = useRef<mpegts.Player | null>(null)
   const [status, setStatus] = useState('')
@@ -13,7 +20,10 @@ export function useMpegtsPreview(streamId: number | null) {
     setStatus('连接中...')
 
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${proto}//${location.host}/api/preview/${streamId}/ws`
+    let wsUrl = `${proto}//${location.host}/api/preview/${streamId}/ws`
+    if (config) {
+      wsUrl += `?width=${config.width}&height=${config.height}&fps=${config.fps}&crf=${config.crf}`
+    }
 
     if (mpegts.isSupported()) {
       const player = mpegts.createPlayer(
@@ -45,7 +55,7 @@ export function useMpegtsPreview(streamId: number | null) {
         playerRef.current = null
       }
     }
-  }, [streamId])
+  }, [streamId, config])
 
   return { videoRef, status }
 }
