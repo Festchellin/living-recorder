@@ -34,3 +34,5 @@ __pycache__/
 
 # Build artifacts
 backend/build/
+build/living-recorder-linux
+build/living-recorder.exe
