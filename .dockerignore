@@ -1,0 +1,13 @@
+.git/
+.gitignore
+.opencode/
+.superpowers/
+docs/
+video/
+frontend/node_modules/
+frontend/dist/
+build/data/
+build/recordings/
+build/living-recorder-linux
+build/living-recorder.exe
+*.md

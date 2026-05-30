@@ -16,6 +16,10 @@ func Init(cfg config.DatabaseConfig) (*gorm.DB, error) {
 		return nil, err
 	}
 
+	// WAL mode + relaxed sync: cuts fsync overhead on slow disks (NFS/SMB/USB)
+	db.Exec("PRAGMA journal_mode = WAL")
+	db.Exec("PRAGMA synchronous = NORMAL")
+
 	if err := db.AutoMigrate(
 		&models.Group{},
 		&models.Stream{},

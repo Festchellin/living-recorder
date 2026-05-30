@@ -1,0 +1,10 @@
+services:
+  living-recorder:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+      - ./recordings:/app/recordings
+      - ./build/config.yaml:/app/config.yaml
+    restart: unless-stopped

@@ -108,6 +108,7 @@ export const api = {
     stopAll: () => request<{success: number; errors?: string[]}>('/api/streams/stop-all', { method: 'POST' }),
     logs: (id: number) => request<RecordLog[]>(`/api/streams/${id}/logs`),
     probe: (id: number) => request<{ reachable: boolean }>(`/api/streams/${id}/probe`),
+    probeInfo: (id: number) => request<{ width: number; height: number; fps: number }>(`/api/streams/${id}/probe-info`),
   },
   tasks: {
     list: () => request<RecordTask[]>('/api/tasks'),

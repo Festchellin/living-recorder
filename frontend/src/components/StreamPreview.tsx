@@ -1,5 +1,15 @@
+import { useState, useRef, useEffect } from 'react'
 import { useMpegtsPreview } from '@/hooks/useMpegts'
-import { X } from 'lucide-react'
+import type { PreviewConfig } from '@/hooks/useMpegts'
+import { PreviewQualityPopover } from './PreviewQualityPopover'
+import { X, Settings } from 'lucide-react'
+
+const DEFAULT_PREVIEW_CONFIG: PreviewConfig = {
+  width: 640,
+  height: 360,
+  fps: 10,
+  crf: 35,
+}
 
 interface StreamPreviewProps {
   streamId: number
@@ -7,21 +17,54 @@ interface StreamPreviewProps {
 }
 
 export function StreamPreview({ streamId, onClose }: StreamPreviewProps) {
-  const { videoRef, status } = useMpegtsPreview(streamId)
+  const [previewConfig, setPreviewConfig] = useState<PreviewConfig>(DEFAULT_PREVIEW_CONFIG)
+  const [showSettings, setShowSettings] = useState(false)
+  const { videoRef, status } = useMpegtsPreview(streamId, previewConfig)
+
+  const headerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (headerRef.current && !headerRef.current.contains(e.target as Node)) {
+        setShowSettings(false)
+      }
+    }
+    if (showSettings) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showSettings])
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
       <div className="glass-strong rounded-xl overflow-hidden w-full max-w-3xl mx-4">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+        <div ref={headerRef} className="relative flex items-center justify-between px-4 py-3 border-b border-white/10">
           <span className="text-sm text-white/70">
             {status || '正在连接...'}
           </span>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
-          >
-            <X className="h-5 w-5 text-white/70" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowSettings(!showSettings)}
+              className="p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+              title="画质设置"
+            >
+              <Settings className="h-4 w-4 text-white/70" />
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+            >
+              <X className="h-5 w-5 text-white/70" />
+            </button>
+          </div>
+          {showSettings && (
+            <PreviewQualityPopover
+              streamId={streamId}
+              config={previewConfig}
+              onChange={setPreviewConfig}
+              onClose={() => setShowSettings(false)}
+            />
+          )}
         </div>
         <div className="bg-black/50 aspect-video flex items-center justify-center relative">
           <video

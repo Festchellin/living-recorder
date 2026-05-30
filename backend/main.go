@@ -46,6 +46,7 @@ func main() {
 	}
 
 	logWriter := services.NewLogWriter(db)
+	defer logWriter.Stop()
 	recorder := services.NewRecorderService(db, &cfg.Recorder, cfg.FFmpeg.Path, store)
 	scheduler := services.NewSchedulerService(db, recorder)
 	monitor := services.NewMonitorService(db, recorder, cfg.Recorder)

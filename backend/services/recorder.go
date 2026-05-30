@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -29,6 +30,7 @@ type StreamProcess struct {
 	OutputPath string
 	StreamName string
 	userStopped atomic.Bool
+	stderrBuf  bytes.Buffer
 }
 
 type StatusChangeCallback func(streamID uint)
@@ -102,6 +104,11 @@ func (s *RecorderService) Start(streamID uint, task *models.RecordTask) error {
 		return fmt.Errorf("stdin pipe: %w", err)
 	}
 
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("stderr pipe: %w", err)
+	}
+
 	sp := &StreamProcess{
 		StreamID:   streamID,
 		TaskID:     task.ID,
@@ -124,6 +131,7 @@ func (s *RecorderService) Start(streamID uint, task *models.RecordTask) error {
 		return fmt.Errorf("start ffmpeg: %w", err)
 	}
 
+	go io.Copy(&sp.stderrBuf, stderr)
 	go s.watchProcess(sp)
 
 	if s.onStatusChange != nil {
@@ -388,14 +396,30 @@ func (s *RecorderService) watchProcess(sp *StreamProcess) {
 		msg += fmt.Sprintf(", 大小 %.1fMB", float64(fileSize)/1024/1024)
 	}
 
+	if sp.stderrBuf.Len() > 0 {
+		log.Printf("[recorder] ffmpeg stderr for stream %d (%s):\n%s", sp.StreamID, sp.StreamName, sp.stderrBuf.String())
+	}
+
 	if err != nil {
-		if sp.userStopped.Load() || isProcessKilled(err) {
+		if sp.userStopped.Load() {
 			status = "success"
 			eventType = models.EventRecordingStopped
 			msg = fmt.Sprintf("录制已停止: %s (时长 %d秒)", sp.StreamName, duration)
+		} else if isProcessKilled(err) {
+			status = "success"
+			eventType = models.EventRecordingStopped
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				errMsg = fmt.Sprintf("exit code %d (%#x)", exitErr.ExitCode(), uint32(exitErr.ExitCode()))
+			}
+			msg = fmt.Sprintf("录制意外终止: %s (时长 %d秒, %s)", sp.StreamName, duration, errMsg)
+			log.Printf("[recorder] stream %d (%s) 进程意外退出, code=%s", sp.StreamID, sp.StreamName, errMsg)
 		} else {
 			status = "failed"
-			errMsg = err.Error()
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				errMsg = fmt.Sprintf("exit code %d (%#x)", exitErr.ExitCode(), uint32(exitErr.ExitCode()))
+			} else {
+				errMsg = err.Error()
+			}
 			eventType = models.EventRecordingFailed
 			msg = fmt.Sprintf("录制失败: %s — %s", sp.StreamName, errMsg)
 		}
@@ -479,8 +503,9 @@ func isProcessKilled(err error) bool {
 	if exitErr, ok := err.(*exec.ExitError); ok {
 		code := exitErr.ExitCode()
 		// -1 = killed by signal (Unix)
+		// 1 = killed by Process.Kill() / TerminateProcess  (Windows)
 		// uint32(code) == 0xFFFFFFEA = forced termination (Windows, works on both 32/64-bit)
-		return code == -1 || uint32(code) == 0xFFFFFFEA
+		return code == -1 || code == 1 || uint32(code) == 0xFFFFFFEA
 	}
 	return false
 }

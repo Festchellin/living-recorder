@@ -57,7 +57,7 @@ export function PreviewCell({ streamId, streamName, onDrop, onRemove }: PreviewC
   return (
     <div
       ref={cellRef}
-      className="relative bg-black/40 rounded-lg border border-white/10 overflow-hidden flex items-center justify-center transition-colors duration-200"
+      className="relative bg-black/40 rounded-lg border border-white/10 overflow-visible flex items-center justify-center transition-colors duration-200"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -93,8 +93,9 @@ export function PreviewCell({ streamId, streamName, onDrop, onRemove }: PreviewC
               <X className="h-3 w-3 text-white/70" />
             </button>
           </div>
-          {showSettings && (
+          {showSettings && streamId && (
             <PreviewQualityPopover
+              streamId={streamId}
               config={previewConfig}
               onChange={setPreviewConfig}
               onClose={() => setShowSettings(false)}

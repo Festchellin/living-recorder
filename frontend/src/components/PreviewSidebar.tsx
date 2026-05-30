@@ -47,6 +47,12 @@ export function PreviewSidebar({ streams, groups }: PreviewSidebarProps) {
     streamsByGroup.get(key)!.push(s)
   }
 
+  const countGroupStreams = (node: Group): number => {
+    const direct = streamsByGroup.get(node.id)?.length ?? 0
+    const sub = (node.children ?? []).reduce((sum, child) => sum + countGroupStreams(child), 0)
+    return direct + sub
+  }
+
   const renderGroup = (node: Group, depth: number): JSX.Element => {
     const isExpanded = expanded.has(node.id)
     const groupStreams = streamsByGroup.get(node.id) ?? []
@@ -64,7 +70,7 @@ export function PreviewSidebar({ streams, groups }: PreviewSidebarProps) {
             <div className="w-3" />
           )}
           {node.name}
-          <span className="text-[10px] text-white/20 ml-auto">({groupStreams.length})</span>
+          <span className="text-[10px] text-white/20 ml-auto">({countGroupStreams(node)})</span>
         </div>
         {isExpanded && (
           <>

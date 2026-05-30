@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"os/exec"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -187,6 +189,25 @@ func (h *StreamHandler) Probe(c *gin.Context) {
 	}
 }
 
+func (h *StreamHandler) ProbeInfo(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+	var stream models.Stream
+	if err := h.db.First(&stream, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": "stream not found"})
+		return
+	}
+
+	info := probeSource(stream.URL, stream.Protocol)
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": gin.H{
+			"width":  info.width,
+			"height": info.height,
+			"fps":    info.fps,
+		},
+	})
+}
+
 func (h *StreamHandler) PreviewWS(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
 	var stream models.Stream
@@ -206,6 +227,19 @@ func (h *StreamHandler) PreviewWS(c *gin.Context) {
 	height := defaultInt(q.Get("height"), 360)
 	fps := defaultInt(q.Get("fps"), 10)
 	crf := defaultInt(q.Get("crf"), 35)
+
+	info := probeSource(stream.URL, stream.Protocol)
+	if info.width > 0 {
+		if width > info.width || height > info.height {
+			width = min(width, info.width)
+			height = min(height, info.height)
+			log.Printf("preview stream %d: clamped resolution to %dx%d (source: %dx%d)", stream.ID, width, height, info.width, info.height)
+		}
+		if fps > 0 && info.fps > 0 && fps > info.fps {
+			fps = info.fps
+			log.Printf("preview stream %d: clamped fps to %d (source: %d)", stream.ID, fps, info.fps)
+		}
+	}
 
 	hwEnc := h.recorder.GetHardwareEncoder()
 	args := []string{}
@@ -305,6 +339,81 @@ func (h *StreamHandler) PreviewWS(c *gin.Context) {
 	cmd.Process.Kill()
 	<-done
 	cmd.Wait()
+}
+
+type streamInfo struct {
+	width  int
+	height int
+	fps    int
+}
+
+type cachedProbe struct {
+	info streamInfo
+	ts   time.Time
+}
+
+var (
+	probeCache    sync.Map
+	probeCacheTTL = 60 * time.Second
+)
+
+func probeSource(url, protocol string) streamInfo {
+	if v, ok := probeCache.Load(url); ok {
+		cp := v.(cachedProbe)
+		if time.Since(cp.ts) < probeCacheTTL {
+			return cp.info
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	args := []string{"-v", "quiet", "-print_format", "json", "-show_streams"}
+	if protocol == "rtsp" {
+		args = append(args, "-rtsp_transport", "tcp")
+	}
+	args = append(args, "-i", url)
+
+	cmd := exec.CommandContext(ctx, "ffprobe", args...)
+	output, err := cmd.Output()
+	if err != nil {
+		return streamInfo{}
+	}
+
+	var probeResult struct {
+		Streams []struct {
+			CodecType string `json:"codec_type"`
+			Width     int    `json:"width"`
+			Height    int    `json:"height"`
+			AvgFPS    string `json:"avg_frame_rate"`
+		} `json:"streams"`
+	}
+	if err := json.Unmarshal(output, &probeResult); err != nil {
+		return streamInfo{}
+	}
+
+	for _, s := range probeResult.Streams {
+		if s.CodecType == "video" {
+			info := streamInfo{width: s.Width, height: s.Height, fps: parseFPS(s.AvgFPS)}
+			probeCache.Store(url, cachedProbe{info: info, ts: time.Now()})
+			return info
+		}
+	}
+
+	return streamInfo{}
+}
+
+func parseFPS(s string) int {
+	parts := strings.Split(s, "/")
+	if len(parts) != 2 {
+		return 0
+	}
+	num, _ := strconv.Atoi(parts[0])
+	den, _ := strconv.Atoi(parts[1])
+	if den == 0 {
+		return 0
+	}
+	return num / den
 }
 
 func defaultInt(s string, def int) int {
