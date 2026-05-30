@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"living-recorder/backend/models"
 	"living-recorder/backend/services"
@@ -200,6 +201,12 @@ func (h *StreamHandler) PreviewWS(c *gin.Context) {
 	}
 	defer conn.Close()
 
+	q := c.Request.URL.Query()
+	width := defaultInt(q.Get("width"), 640)
+	height := defaultInt(q.Get("height"), 360)
+	fps := defaultInt(q.Get("fps"), 10)
+	crf := defaultInt(q.Get("crf"), 35)
+
 	hwEnc := h.recorder.GetHardwareEncoder()
 	args := []string{}
 	if stream.Protocol == "rtsp" {
@@ -215,32 +222,36 @@ func (h *StreamHandler) PreviewWS(c *gin.Context) {
 	switch hwEnc {
 	case "h264_vaapi":
 		args = append(args, "-c:v", "h264_vaapi")
-		args = append(args, "-vf", "scale=-2:360,format=nv12,hwupload")
+		args = append(args, "-vf", fmt.Sprintf("scale=%d:%d,format=nv12,hwupload", width, height))
 	case "h264_nvenc":
 		args = append(args, "-c:v", "h264_nvenc")
 		args = append(args, "-preset", "p1")
-		args = append(args, "-vf", "scale=-2:360")
+		args = append(args, "-vf", fmt.Sprintf("scale=%d:%d", width, height))
 	case "h264_qsv":
 		args = append(args, "-c:v", "h264_qsv")
 		args = append(args, "-preset", "1")
-		args = append(args, "-global_quality", "35")
-		args = append(args, "-vf", "scale=-2:360")
+		args = append(args, "-global_quality", fmt.Sprintf("%d", crf))
+		args = append(args, "-vf", fmt.Sprintf("scale=%d:%d", width, height))
 	case "h264_amf":
 		args = append(args, "-c:v", "h264_amf")
 		args = append(args, "-quality", "speed")
-		args = append(args, "-vf", "scale=-2:360")
+		args = append(args, "-qp_i", fmt.Sprintf("%d", crf))
+		args = append(args, "-qp_p", fmt.Sprintf("%d", crf))
+		args = append(args, "-vf", fmt.Sprintf("scale=%d:%d", width, height))
 	case "h264_videotoolbox":
 		args = append(args, "-c:v", "h264_videotoolbox")
 		args = append(args, "-encoder", "speed")
-		args = append(args, "-vf", "scale=-2:360")
+		args = append(args, "-vf", fmt.Sprintf("scale=%d:%d", width, height))
 	default:
 		args = append(args, "-c:v", "libx264")
 		args = append(args, "-preset", "ultrafast")
 		args = append(args, "-tune", "zerolatency")
-		args = append(args, "-vf", "scale=-2:360")
+		args = append(args, "-vf", fmt.Sprintf("scale=%d:%d", width, height))
 	}
-	args = append(args, "-r", "10")
-	args = append(args, "-crf", "35")
+	args = append(args, "-r", fmt.Sprintf("%d", fps))
+	if hwEnc != "h264_videotoolbox" && hwEnc != "h264_amf" && hwEnc != "h264_qsv" {
+		args = append(args, "-crf", fmt.Sprintf("%d", crf))
+	}
 	args = append(args, "-c:a", "aac")
 	args = append(args, "-f", "mpegts")
 	args = append(args, "-flush_packets", "1")
@@ -294,4 +305,15 @@ func (h *StreamHandler) PreviewWS(c *gin.Context) {
 	cmd.Process.Kill()
 	<-done
 	cmd.Wait()
+}
+
+func defaultInt(s string, def int) int {
+	if s == "" {
+		return def
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil || v <= 0 {
+		return def
+	}
+	return v
 }
