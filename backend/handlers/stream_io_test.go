@@ -1,8 +1,11 @@
 package handlers
 
 import (
-	"living-recorder/backend/models"
+	"encoding/json"
+	"strings"
 	"testing"
+
+	"living-recorder/backend/models"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -43,6 +46,76 @@ func TestGetGroupPath_RootOnly(t *testing.T) {
 	path := h.getGroupPath(&g)
 	if path != "一楼" {
 		t.Fatalf("expected '一楼', got %q", path)
+	}
+}
+
+func TestExportJSON(t *testing.T) {
+	db := setupTestDB(t)
+	h := &StreamHandler{db: db}
+	streams := []models.Stream{
+		{Name: "cam1", URL: "rtsp://example.com/1", Protocol: "rtsp", Remark: "test"},
+	}
+
+	var buf strings.Builder
+	err := h.writeJSON(&buf, streams)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var decoded []importStream
+	if err := json.Unmarshal([]byte(buf.String()), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded) != 1 || decoded[0].Name != "cam1" {
+		t.Fatal("JSON round-trip failed")
+	}
+}
+
+func TestExportCSV(t *testing.T) {
+	db := setupTestDB(t)
+	h := &StreamHandler{db: db}
+	streams := []models.Stream{
+		{Name: "cam1", URL: "rtsp://example.com/1", Protocol: "rtsp"},
+	}
+
+	var buf strings.Builder
+	err := h.writeCSV(&buf, streams)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines (header + data), got %d", len(lines))
+	}
+	if !strings.HasPrefix(lines[0], "name") {
+		t.Fatalf("expected CSV header, got %q", lines[0])
+	}
+}
+
+func TestExportTXT(t *testing.T) {
+	db := setupTestDB(t)
+	h := &StreamHandler{db: db}
+	streams := []models.Stream{
+		{Name: "cam1", URL: "rtsp://example.com/1", Protocol: "rtsp"},
+	}
+
+	var buf strings.Builder
+	err := h.writeTXT(&buf, streams)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 line, got %d", len(lines))
+	}
+	var decoded importStream
+	if err := json.Unmarshal([]byte(lines[0]), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Name != "cam1" {
+		t.Fatal("TXT round-trip failed")
 	}
 }
 
