@@ -1,5 +1,8 @@
 name: CI
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   push:
     branches: [main]
@@ -65,18 +68,24 @@ jobs:
           cd frontend && npm ci && npm run build
           cp -r dist ../backend/embed/
 
-      - name: Build Linux amd64
+      - name: Build Linux (amd64, 64-bit)
         working-directory: ./backend
-        run: GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o ../living-recorder_linux_amd64 .
+        env:
+          GOOS: linux
+          GOARCH: amd64
+        run: CGO_ENABLED=0 go build -o ../living-recorder-linux-amd64 .
 
-      - name: Build Windows amd64
+      - name: Build Windows (amd64, 64-bit)
         working-directory: ./backend
-        run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o ../living-recorder_windows_amd64.exe .
+        env:
+          GOOS: windows
+          GOARCH: amd64
+        run: CGO_ENABLED=0 go build -o ../living-recorder-windows-amd64.exe .
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            living-recorder_linux_amd64
-            living-recorder_windows_amd64.exe
+            living-recorder-linux-amd64
+            living-recorder-windows-amd64.exe
           generate_release_notes: true
