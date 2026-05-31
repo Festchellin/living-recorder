@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { api, Group, Stream, buildTree, flattenTree, getGroupPath } from '@/lib/api'
+import { api, Group, Stream, ImportResult, buildTree, flattenTree, getGroupPath } from '@/lib/api'
 import { StreamCard } from '@/components/StreamCard'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { FloatingStatus, StatusMsg } from '@/components/FloatingStatus'
-import { Plus, Play, Square } from 'lucide-react'
+import { Plus, Play, Square, FileUp, FileDown } from 'lucide-react'
 
 const protocols = ['rtsp', 'rtmp', 'flv', 'hls']
 
@@ -38,6 +38,9 @@ export default function Streams() {
   const [open, setOpen] = useState(false)
   const [maxParallel, setMaxParallel] = useState(3)
   const [statusMsgs, setStatusMsgs] = useState<StatusMsg[]>([])
+  const [exportOpen, setExportOpen] = useState(false)
+  const [importResult, setImportResult] = useState<ImportResult | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const busyRef = useRef(false)
 
   const addMsg = useCallback((text: string, type: StatusMsg['type'] = 'loading') => {
@@ -145,6 +148,42 @@ export default function Streams() {
     }
   }
 
+  const handleExport = async (format: string) => {
+    try {
+      const { blob, filename } = await api.streams.export(format)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(url)
+      addMsg(`导出成功: ${filename}`, 'success')
+    } catch {
+      addMsg('导出失败', 'error')
+    }
+    setExportOpen(false)
+  }
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const result = await api.streams.import(file)
+      setImportResult(result)
+      if (result.success > 0) {
+        addMsg(`导入成功: ${result.success}个`, 'success')
+      }
+      if (result.skipped > 0) {
+        addMsg(`跳过: ${result.skipped}个（名称/URL重复）`, 'success')
+      }
+      loadStreams()
+      loadGroups()
+    } catch {
+      addMsg('导入失败', 'error')
+    }
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
   const handleStopAll = async () => {
     if (busyRef.current) return
     busyRef.current = true
@@ -206,6 +245,21 @@ export default function Streams() {
             <Square className="h-4 w-4 mr-1" />
             全部停止
           </Button>
+          <Button variant="outline" onClick={() => setExportOpen(true)}>
+            <FileDown className="h-4 w-4 mr-1" />
+            导出
+          </Button>
+          <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
+            <FileUp className="h-4 w-4 mr-1" />
+            导入
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json,.csv,.xlsx,.txt"
+            className="hidden"
+            onChange={handleImportFile}
+          />
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button onClick={() => setEditing({ protocol: 'rtsp' })}>
@@ -249,6 +303,13 @@ export default function Streams() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>备注</Label>
+                  <Input
+                    value={editing.remark || ''}
+                    onChange={(e) => setEditing({ ...editing, remark: e.target.value })}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>分组</Label>
@@ -326,6 +387,45 @@ export default function Streams() {
           />
         ))}
       </div>
+      <Dialog open={exportOpen} onOpenChange={setExportOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>导出信号源</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { format: 'json', label: 'JSON' },
+                { format: 'csv', label: 'CSV' },
+                { format: 'xlsx', label: 'Excel' },
+                { format: 'txt', label: 'TXT(JSON Lines)' },
+              ].map(({ format, label }) => (
+                <Button key={format} variant="outline" onClick={() => handleExport(format)}>
+                  {label}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={importResult !== null} onOpenChange={(o) => { if (!o) setImportResult(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>导入结果</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <p className="text-green-400">成功: {importResult?.success}</p>
+            <p className="text-yellow-400">跳过: {importResult?.skipped}</p>
+            {importResult?.errors && importResult.errors.length > 0 && (
+              <div className="text-red-400 text-sm space-y-1">
+                {importResult.errors.map((e, i) => (
+                  <p key={i}>第{e.line}行: {e.message}</p>
+                ))}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
       <FloatingStatus messages={statusMsgs} />
     </div>
   )
