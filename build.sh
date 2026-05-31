@@ -2,13 +2,14 @@
 set -e
 
 usage() {
-    echo "Usage: $0 [native|embed] [linux|windows|all]"
+    echo "Usage: $0 [native|embed] [linux|windows|darwin|all]"
     echo ""
     echo "  native          Build with system ffmpeg (default)"
     echo "  embed           Build with embedded ffmpeg"
     echo "  linux           Build for Linux amd64"
     echo "  windows         Build for Windows amd64"
-    echo "  all             Build for Linux and Windows"
+    echo "  darwin          Build for macOS amd64"
+    echo "  all             Build for Linux, Windows and macOS"
     echo ""
     echo "Examples:"
     echo "  $0              Build native Linux binary"
@@ -62,7 +63,11 @@ case "$PLATFORM" in
     windows)
         build windows amd64 ".exe"
         ;;
+    darwin)
+        build darwin amd64 ""
+        ;;
     all)
+        build darwin amd64 ""
         build linux amd64 ""
         build windows amd64 ".exe"
         ;;

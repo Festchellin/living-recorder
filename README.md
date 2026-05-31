@@ -35,6 +35,8 @@ Release 提供两种构建模式：
 | `living-recorder-linux-amd64-embedded-ffmpeg` | **内置 FFmpeg**，启动时自动解压，无需额外安装 |
 | `living-recorder-windows-amd64.exe` | 使用系统已安装的 FFmpeg |
 | `living-recorder-windows-amd64-embedded-ffmpeg.exe` | **内置 FFmpeg**，启动时自动解压 |
+| `living-recorder-darwin-amd64` | macOS (Intel)，使用系统已安装的 FFmpeg |
+| `living-recorder-darwin-amd64-embedded-ffmpeg` | macOS (Intel)，**内置 FFmpeg** |
 
 **Docker 镜像**内置 FFmpeg：
 
@@ -51,6 +53,8 @@ docker run -p 8080:8080 ghcr.io/festchellin/living-recorder:1.0.0
 | macOS | `brew install ffmpeg` |
 | Windows | 下载 [ffmpeg.org](https://ffmpeg.org/download.html) 并添加到 PATH |
 
+> macOS arm64 (Apple Silicon) 暂不提供预编译产物，可本地使用 `./build.sh` 自行编译。
+
 本地构建两种模式：
 
 ```bash
@@ -58,9 +62,10 @@ docker run -p 8080:8080 ghcr.io/festchellin/living-recorder:1.0.0
 ./build.sh
 
 # 指定平台
-./build.sh native all          # Linux + Windows，使用系统 ffmpeg
+./build.sh native all          # Linux + Windows + macOS，使用系统 ffmpeg
 ./build.sh embed linux         # Linux，内置 ffmpeg
-./build.sh embed all           # Linux + Windows，内置 ffmpeg
+./build.sh embed darwin        # macOS，内置 ffmpeg
+./build.sh embed all           # 全平台，内置 ffmpeg
 ```
 
 ## 技术栈
