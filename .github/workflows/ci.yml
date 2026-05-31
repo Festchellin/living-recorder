@@ -112,20 +112,7 @@ jobs:
     strategy:
       matrix:
         target:
-          - name: darwin-amd64-embedded-ffmpeg
-            goos: darwin
-            goarch: amd64
-            ext: ""
-            ffmpeg_url: https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-macos64-gpl.tar.xz
-            ffmpeg_archive: ffmpeg.tar.xz
-            ffmpeg_bin_dir: ffmpeg-master-latest-macos64-gpl/bin
-          - name: darwin-arm64-embedded-ffmpeg
-            goos: darwin
-            goarch: arm64
-            ext: ""
-            ffmpeg_url: https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-macosarm64-gpl.tar.xz
-            ffmpeg_archive: ffmpeg.tar.xz
-            ffmpeg_bin_dir: ffmpeg-master-latest-macosarm64-gpl/bin
+
           - name: linux-amd64-embedded-ffmpeg
             goos: linux
             goarch: amd64
