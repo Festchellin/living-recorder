@@ -63,13 +63,25 @@ jobs:
             goos: darwin
             goarch: amd64
             ext: ""
+          - name: darwin-arm64
+            goos: darwin
+            goarch: arm64
+            ext: ""
           - name: linux-amd64
             goos: linux
             goarch: amd64
             ext: ""
+          - name: linux-arm64
+            goos: linux
+            goarch: arm64
+            ext: ""
           - name: windows-amd64
             goos: windows
             goarch: amd64
+            ext: .exe
+          - name: windows-arm64
+            goos: windows
+            goarch: arm64
             ext: .exe
     steps:
       - uses: actions/checkout@v4
@@ -107,6 +119,13 @@ jobs:
             ffmpeg_url: https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-macos64-gpl.tar.xz
             ffmpeg_archive: ffmpeg.tar.xz
             ffmpeg_bin_dir: ffmpeg-master-latest-macos64-gpl/bin
+          - name: darwin-arm64-embedded-ffmpeg
+            goos: darwin
+            goarch: arm64
+            ext: ""
+            ffmpeg_url: https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-macosarm64-gpl.tar.xz
+            ffmpeg_archive: ffmpeg.tar.xz
+            ffmpeg_bin_dir: ffmpeg-master-latest-macosarm64-gpl/bin
           - name: linux-amd64-embedded-ffmpeg
             goos: linux
             goarch: amd64
@@ -114,6 +133,13 @@ jobs:
             ffmpeg_url: https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz
             ffmpeg_archive: ffmpeg.tar.xz
             ffmpeg_bin_dir: ffmpeg-master-latest-linux64-gpl/bin
+          - name: linux-arm64-embedded-ffmpeg
+            goos: linux
+            goarch: arm64
+            ext: ""
+            ffmpeg_url: https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-gpl.tar.xz
+            ffmpeg_archive: ffmpeg.tar.xz
+            ffmpeg_bin_dir: ffmpeg-master-latest-linuxarm64-gpl/bin
           - name: windows-amd64-embedded-ffmpeg
             goos: windows
             goarch: amd64
@@ -121,6 +147,13 @@ jobs:
             ffmpeg_url: https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip
             ffmpeg_archive: ffmpeg.zip
             ffmpeg_bin_dir: ffmpeg-master-latest-win64-gpl/bin
+          - name: windows-arm64-embedded-ffmpeg
+            goos: windows
+            goarch: arm64
+            ext: .exe
+            ffmpeg_url: https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-winarm64-gpl.zip
+            ffmpeg_archive: ffmpeg.zip
+            ffmpeg_bin_dir: ffmpeg-master-latest-winarm64-gpl/bin
       max-parallel: 1
     steps:
       - uses: actions/checkout@v4
@@ -148,12 +181,12 @@ jobs:
           GOARCH: ${{ matrix.target.goarch }}
         run: CGO_ENABLED=0 go build -tags embedffmpeg -o "../living-recorder-${{ matrix.target.name }}${{ matrix.target.ext }}" .
       - name: Upload ${{ matrix.target.name }}
-        if: matrix.target.name == 'linux-amd64-embedded-ffmpeg'
+        if: matrix.target.name != 'windows-arm64-embedded-ffmpeg'
         uses: softprops/action-gh-release@v2
         with:
           files: living-recorder-${{ matrix.target.name }}${{ matrix.target.ext }}
       - name: Upload ${{ matrix.target.name }} and generate release notes
-        if: matrix.target.name == 'windows-amd64-embedded-ffmpeg'
+        if: matrix.target.name == 'windows-arm64-embedded-ffmpeg'
         uses: softprops/action-gh-release@v2
         with:
           files: living-recorder-${{ matrix.target.name }}${{ matrix.target.ext }}
