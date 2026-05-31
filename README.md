@@ -27,9 +27,16 @@
 
 ### FFmpeg 处理
 
-从 [GitHub Releases](https://github.com/Festchellin/living-recorder/releases) 下载的预编译二进制已**内置 FFmpeg**，启动时自动解压，无需额外安装。
+Release 提供两种构建模式：
 
-**Docker 镜像**也已内置 FFmpeg：
+| 产物 | 说明 |
+|------|------|
+| `living-recorder-linux-amd64` | 使用系统已安装的 FFmpeg |
+| `living-recorder-linux-amd64-embed-ffmpeg` | **内置 FFmpeg**，启动时自动解压，无需额外安装 |
+| `living-recorder-windows-amd64.exe` | 使用系统已安装的 FFmpeg |
+| `living-recorder-windows-amd64-embed-ffmpeg.exe` | **内置 FFmpeg**，启动时自动解压 |
+
+**Docker 镜像**内置 FFmpeg：
 
 ```bash
 docker pull ghcr.io/festchellin/living-recorder:1.0.0
@@ -43,6 +50,16 @@ docker run -p 8080:8080 ghcr.io/festchellin/living-recorder:1.0.0
 | Linux | `sudo apt install ffmpeg` |
 | macOS | `brew install ffmpeg` |
 | Windows | 下载 [ffmpeg.org](https://ffmpeg.org/download.html) 并添加到 PATH |
+
+本地构建两种模式：
+
+```bash
+# 使用系统 ffmpeg（默认）
+make build-native
+
+# 内置 ffmpeg（需先下载静态 ffmpeg 到 backend/embed/ffmpeg/）
+make build-embed
+```
 
 ## 技术栈
 

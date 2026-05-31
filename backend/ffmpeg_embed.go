@@ -1,3 +1,5 @@
+//go:build embedffmpeg
+
 package main
 
 import (
