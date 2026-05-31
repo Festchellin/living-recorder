@@ -65,12 +65,18 @@ jobs:
           cd frontend && npm ci && npm run build
           cp -r dist ../backend/embed/
 
-      - name: Build binary
+      - name: Build Linux amd64
         working-directory: ./backend
-        run: CGO_ENABLED=0 go build -o ../living-recorder-linux .
+        run: GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o ../living-recorder_linux_amd64 .
+
+      - name: Build Windows amd64
+        working-directory: ./backend
+        run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o ../living-recorder_windows_amd64.exe .
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: living-recorder-linux
+          files: |
+            living-recorder_linux_amd64
+            living-recorder_windows_amd64.exe
           generate_release_notes: true
