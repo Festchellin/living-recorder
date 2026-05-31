@@ -130,10 +130,16 @@ export const api = {
         return { blob, filename }
       }),
 
-    import: (file: File) => {
+    import: async (file: File) => {
       const form = new FormData()
       form.append('file', file)
-      return request<ImportResult>('/api/streams/import', { method: 'POST', body: form })
+      const res = await fetch(`${BASE_URL}/api/streams/import`, {
+        method: 'POST',
+        body: form,
+      })
+      const body = await res.json()
+      if (body.code !== 0) throw new Error(body.message)
+      return body.data as ImportResult
     },
   },
   tasks: {
