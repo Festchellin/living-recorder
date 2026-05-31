@@ -61,6 +61,12 @@ export interface Group {
   updated_at: string
 }
 
+export interface ImportResult {
+  success: number
+  skipped: number
+  errors?: { line: number; message: string }[]
+}
+
 export interface Status {
   total_streams: number
   active_recordings: number
@@ -110,6 +116,25 @@ export const api = {
     logs: (id: number) => request<RecordLog[]>(`/api/streams/${id}/logs`),
     probe: (id: number) => request<{ reachable: boolean }>(`/api/streams/${id}/probe`),
     probeInfo: (id: number) => request<{ width: number; height: number; fps: number }>(`/api/streams/${id}/probe-info`),
+
+    export: (format: string, ids?: number[]) =>
+      fetch(`${BASE_URL}/api/streams/export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ format, ids }),
+      }).then(async (r) => {
+        const disp = r.headers.get('Content-Disposition') || ''
+        const match = disp.match(/filename="?(.+?)"?$/)
+        const filename = match?.[1] || `streams.${format}`
+        const blob = await r.blob()
+        return { blob, filename }
+      }),
+
+    import: (file: File) => {
+      const form = new FormData()
+      form.append('file', file)
+      return request<ImportResult>('/api/streams/import', { method: 'POST', body: form })
+    },
   },
   tasks: {
     list: () => request<RecordTask[]>('/api/tasks'),
