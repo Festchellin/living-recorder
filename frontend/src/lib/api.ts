@@ -7,6 +7,7 @@ export interface Stream {
   protocol: string
   enabled: boolean
   status: string
+  remark: string
   group_id: number | null
   group?: Group
   created_at: string
