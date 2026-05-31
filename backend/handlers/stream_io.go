@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -98,6 +99,104 @@ func (h *StreamHandler) Export(c *gin.Context) {
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": "不支持的格式: " + req.Format})
 	}
+}
+
+func (h *StreamHandler) Import(c *gin.Context) {
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": "请上传文件"})
+		return
+	}
+
+	f, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "文件读取失败"})
+		return
+	}
+	defer f.Close()
+
+	var items []importStream
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	switch ext {
+	case ".json":
+		items, err = h.parseJSON(f)
+	case ".csv":
+		items, err = h.parseCSV(f)
+	case ".xlsx":
+		data, readErr := io.ReadAll(f)
+		if readErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": "文件读取失败"})
+			return
+		}
+		items, err = h.parseXLSX(data)
+	case ".txt":
+		items, err = h.parseTXT(f)
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": "不支持的文件格式: " + ext})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": err.Error()})
+		return
+	}
+
+	result := h.processImport(items)
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": result})
+}
+
+func (h *StreamHandler) processImport(items []importStream) importResult {
+	var result importResult
+	for lineIdx, item := range items {
+		line := lineIdx + 1
+
+		if item.Name == "" {
+			result.Errors = append(result.Errors, importError{Line: line, Message: "名称为空"})
+			continue
+		}
+		if item.URL == "" {
+			result.Errors = append(result.Errors, importError{Line: line, Message: "URL为空"})
+			continue
+		}
+		if !validProtocols[item.Protocol] {
+			result.Errors = append(result.Errors, importError{Line: line, Message: "不支持的协议: " + item.Protocol})
+			continue
+		}
+
+		var existing models.Stream
+		err := h.db.Where("name = ? OR url = ?", item.Name, item.URL).First(&existing).Error
+		if err == nil {
+			result.Skipped++
+			continue
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			result.Errors = append(result.Errors, importError{Line: line, Message: "查询失败: " + err.Error()})
+			continue
+		}
+
+		stream := models.Stream{
+			Name:     item.Name,
+			URL:      item.URL,
+			Protocol: item.Protocol,
+			Enabled:  item.Enabled,
+			Status:   "idle",
+			Remark:   item.Remark,
+		}
+
+		if item.GroupPath != "" {
+			group, err := h.findOrCreateGroupPath(item.GroupPath)
+			if err != nil {
+				result.Errors = append(result.Errors, importError{Line: line, Message: "分组创建失败: " + err.Error()})
+				continue
+			}
+			stream.GroupID = &group.ID
+		}
+
+		if err := h.db.Create(&stream).Error; err != nil {
+			result.Errors = append(result.Errors, importError{Line: line, Message: "创建失败: " + err.Error()})
+			continue
+		}
+		result.Success++
+	}
+	return result
 }
 
 func (h *StreamHandler) toExportItems(streams []models.Stream) []exportItem {

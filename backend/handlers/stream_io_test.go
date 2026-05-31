@@ -237,6 +237,67 @@ func TestParseTXT(t *testing.T) {
 	}
 }
 
+func TestImportHandler_Process(t *testing.T) {
+	db := setupTestDB(t)
+	db.Create(&models.Stream{Name: "existing", URL: "rtsp://existing/1", Protocol: "rtsp"})
+
+	h := &StreamHandler{db: db}
+
+	result := h.processImport([]importStream{
+		{Name: "newcam", URL: "rtsp://new/1", Protocol: "rtsp", Enabled: true},
+		{Name: "existing", URL: "rtsp://existing/1", Protocol: "rtsp", Enabled: true},
+	})
+
+	if result.Success != 1 {
+		t.Fatalf("expected 1 success, got %d", result.Success)
+	}
+	if result.Skipped != 1 {
+		t.Fatalf("expected 1 skipped, got %d", result.Skipped)
+	}
+}
+
+func TestImportHandler_GroupPath(t *testing.T) {
+	db := setupTestDB(t)
+	h := &StreamHandler{db: db}
+
+	result := h.processImport([]importStream{
+		{Name: "cam1", URL: "rtsp://cam/1", Protocol: "rtsp", GroupPath: "一楼/东侧"},
+	})
+
+	if result.Success != 1 {
+		t.Fatalf("expected 1 success, got %d", result.Success)
+	}
+
+	var count int64
+	db.Model(&models.Group{}).Count(&count)
+	if count != 2 {
+		t.Fatalf("expected 2 groups created, got %d", count)
+	}
+
+	var stream models.Stream
+	db.Preload("Group").First(&stream)
+	if stream.Group == nil || stream.Group.Name != "东侧" {
+		t.Fatal("stream not associated with correct group")
+	}
+}
+
+func TestImportHandler_Validation(t *testing.T) {
+	db := setupTestDB(t)
+	h := &StreamHandler{db: db}
+
+	result := h.processImport([]importStream{
+		{Name: "", URL: "rtsp://empty/1", Protocol: "rtsp"},
+		{Name: "badproto", URL: "rtsp://bad/1", Protocol: "udp"},
+	})
+
+	if result.Success != 0 {
+		t.Fatalf("expected 0 success, got %d", result.Success)
+	}
+	if len(result.Errors) != 2 {
+		t.Fatalf("expected 2 errors, got %d", len(result.Errors))
+	}
+}
+
 func TestFindOrCreateGroupPath(t *testing.T) {
 	db := setupTestDB(t)
 	h := &StreamHandler{db: db}
