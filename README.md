@@ -25,38 +25,24 @@
 
 > 运行前请确保系统已安装 FFmpeg（见下方说明）。
 
-## 前置依赖：FFmpeg
+### FFmpeg 处理
 
-本项目依赖 **FFmpeg** 进行视频流的录制和实时预览转码。运行前需确保 `ffmpeg` 和 `ffprobe` 命令可用。
+从 [GitHub Releases](https://github.com/Festchellin/living-recorder/releases) 下载的预编译二进制已**内置 FFmpeg**，启动时自动解压，无需额外安装。
 
-### 安装 FFmpeg
-
-**Linux (Debian/Ubuntu)**
-```bash
-sudo apt install ffmpeg
-```
-
-**Linux (Alpine)**
-```bash
-apk add ffmpeg
-```
-
-**macOS**
-```bash
-brew install ffmpeg
-```
-
-**Windows**
-下载 https://ffmpeg.org/download.html 并添加到 PATH。
-
-### Docker（无需手动安装）
-
-使用 Docker 镜像时，FFmpeg 已内置在镜像中，无需额外安装。
+**Docker 镜像**也已内置 FFmpeg：
 
 ```bash
 docker pull ghcr.io/festchellin/living-recorder:1.0.0
 docker run -p 8080:8080 ghcr.io/festchellin/living-recorder:1.0.0
 ```
+
+**本地源码编译**需自行安装 FFmpeg：
+
+| 系统 | 命令 |
+|------|------|
+| Linux | `sudo apt install ffmpeg` |
+| macOS | `brew install ffmpeg` |
+| Windows | 下载 [ffmpeg.org](https://ffmpeg.org/download.html) 并添加到 PATH |
 
 ## 技术栈
 

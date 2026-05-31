@@ -7,7 +7,9 @@ import (
 	"log"
 	"mime"
 	"net/http"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"living-recorder/backend/config"
@@ -26,6 +28,19 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
+	}
+
+	if hasEmbeddedFFmpeg() {
+		dir, err := extractEmbeddedFFmpeg()
+		if err != nil {
+			log.Fatalf("Failed to extract embedded ffmpeg: %v", err)
+		}
+		os.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+		cfg.FFmpeg.Path = filepath.Join(dir, "ffmpeg")
+		if runtime.GOOS == "windows" {
+			cfg.FFmpeg.Path += ".exe"
+		}
+		log.Printf("Extracted embedded ffmpeg to %s", dir)
 	}
 
 	db, err := database.Init(cfg.Database)

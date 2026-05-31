@@ -57,6 +57,24 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    strategy:
+      matrix:
+        target:
+          - name: linux-amd64
+            goos: linux
+            goarch: amd64
+            ext: ""
+            ffmpeg_url: https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz
+            ffmpeg_archive: ffmpeg.tar.xz
+            ffmpeg_bin_dir: ffmpeg-master-latest-linux64-gpl/bin
+          - name: windows-amd64
+            goos: windows
+            goarch: amd64
+            ext: .exe
+            ffmpeg_url: https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip
+            ffmpeg_archive: ffmpeg.zip
+            ffmpeg_bin_dir: ffmpeg-master-latest-win64-gpl/bin
+      max-parallel: 1
     steps:
       - uses: actions/checkout@v4
 
@@ -70,24 +88,34 @@ jobs:
           cd frontend && npm ci && npm run build
           cp -r dist ../backend/embed/
 
-      - name: Build Linux (amd64, 64-bit)
+      - name: Download static ffmpeg for ${{ matrix.target.name }}
+        run: |
+          mkdir -p backend/embed/ffmpeg
+          curl -fL "${{ matrix.target.ffmpeg_url }}" -o "/tmp/${{ matrix.target.ffmpeg_archive }}"
+          case "${{ matrix.target.ffmpeg_archive }}" in
+            *.zip) unzip -o "/tmp/${{ matrix.target.ffmpeg_archive }}" -d /tmp ;;
+            *.tar.xz|*.tar* ) tar -xf "/tmp/${{ matrix.target.ffmpeg_archive }}" -C /tmp ;;
+          esac
+          cp "/tmp/${{ matrix.target.ffmpeg_bin_dir }}/ffmpeg${{ matrix.target.ext }}" backend/embed/ffmpeg/
+          cp "/tmp/${{ matrix.target.ffmpeg_bin_dir }}/ffprobe${{ matrix.target.ext }}" backend/embed/ffmpeg/ || true
+
+      - name: Build ${{ matrix.target.name }}
         working-directory: ./backend
         env:
-          GOOS: linux
-          GOARCH: amd64
-        run: CGO_ENABLED=0 go build -o ../living-recorder-linux-amd64 .
+          GOOS: ${{ matrix.target.goos }}
+          GOARCH: ${{ matrix.target.goarch }}
+        run: CGO_ENABLED=0 go build -o "../living-recorder-${{ matrix.target.name }}${{ matrix.target.ext }}" .
 
-      - name: Build Windows (amd64, 64-bit)
-        working-directory: ./backend
-        env:
-          GOOS: windows
-          GOARCH: amd64
-        run: CGO_ENABLED=0 go build -o ../living-recorder-windows-amd64.exe .
-
-      - name: Create Release
+      - name: Upload ${{ matrix.target.name }}
+        if: matrix.target.name == 'linux-amd64'
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            living-recorder-linux-amd64
-            living-recorder-windows-amd64.exe
+          files: living-recorder-${{ matrix.target.name }}${{ matrix.target.ext }}
+
+      - name: Upload ${{ matrix.target.name }} and generate release notes
+        if: matrix.target.name == 'windows-amd64'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: living-recorder-${{ matrix.target.name }}${{ matrix.target.ext }}
           generate_release_notes: true
+          body: "内置 FFmpeg，开箱即用，无需额外安装。"

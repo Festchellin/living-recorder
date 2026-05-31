@@ -9,10 +9,16 @@ video/
 temp/
 data/
 recordings/
+build/
 
 # Frontend
 frontend/node_modules/
 frontend/dist/
+
+# Backend
+backend/build/
+backend/data/
+backend/recodrings
 
 # IDE
 .idea/
@@ -31,6 +37,10 @@ backend/config/config.yaml
 .superpowers/
 __pycache__/
 *.pyc
+
+# Embedded ffmpeg binaries (downloaded by CI)
+backend/embed/ffmpeg/*
+!backend/embed/ffmpeg/.gitkeep
 
 # Build artifacts
 backend/build/
