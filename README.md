@@ -32,9 +32,9 @@ Release 提供两种构建模式：
 | 产物 | 说明 |
 |------|------|
 | `living-recorder-linux-amd64` | 使用系统已安装的 FFmpeg |
-| `living-recorder-linux-amd64-embed-ffmpeg` | **内置 FFmpeg**，启动时自动解压，无需额外安装 |
+| `living-recorder-linux-amd64-embedded-ffmpeg` | **内置 FFmpeg**，启动时自动解压，无需额外安装 |
 | `living-recorder-windows-amd64.exe` | 使用系统已安装的 FFmpeg |
-| `living-recorder-windows-amd64-embed-ffmpeg.exe` | **内置 FFmpeg**，启动时自动解压 |
+| `living-recorder-windows-amd64-embedded-ffmpeg.exe` | **内置 FFmpeg**，启动时自动解压 |
 
 **Docker 镜像**内置 FFmpeg：
 

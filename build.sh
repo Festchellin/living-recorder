@@ -26,7 +26,7 @@ fi
 
 if [ "$MODE" = "embed" ]; then
     TAG="-tags embedffmpeg"
-    SUFFIX="-embed-ffmpeg"
+    SUFFIX="-embedded-ffmpeg"
 else
     TAG=""
     SUFFIX=""

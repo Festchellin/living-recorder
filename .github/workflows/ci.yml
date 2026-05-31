@@ -96,14 +96,14 @@ jobs:
     strategy:
       matrix:
         target:
-          - name: linux-amd64-embed-ffmpeg
+          - name: linux-amd64-embedded-ffmpeg
             goos: linux
             goarch: amd64
             ext: ""
             ffmpeg_url: https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz
             ffmpeg_archive: ffmpeg.tar.xz
             ffmpeg_bin_dir: ffmpeg-master-latest-linux64-gpl/bin
-          - name: windows-amd64-embed-ffmpeg
+          - name: windows-amd64-embedded-ffmpeg
             goos: windows
             goarch: amd64
             ext: .exe
@@ -137,12 +137,12 @@ jobs:
           GOARCH: ${{ matrix.target.goarch }}
         run: CGO_ENABLED=0 go build -tags embedffmpeg -o "../living-recorder-${{ matrix.target.name }}${{ matrix.target.ext }}" .
       - name: Upload ${{ matrix.target.name }}
-        if: matrix.target.name == 'linux-amd64-embed-ffmpeg'
+        if: matrix.target.name == 'linux-amd64-embedded-ffmpeg'
         uses: softprops/action-gh-release@v2
         with:
           files: living-recorder-${{ matrix.target.name }}${{ matrix.target.ext }}
       - name: Upload ${{ matrix.target.name }} and generate release notes
-        if: matrix.target.name == 'windows-amd64-embed-ffmpeg'
+        if: matrix.target.name == 'windows-amd64-embedded-ffmpeg'
         uses: softprops/action-gh-release@v2
         with:
           files: living-recorder-${{ matrix.target.name }}${{ matrix.target.ext }}
