@@ -55,10 +55,12 @@ docker run -p 8080:8080 ghcr.io/festchellin/living-recorder:1.0.0
 
 ```bash
 # 使用系统 ffmpeg（默认）
-make build-native
+./build.sh
 
-# 内置 ffmpeg（需先下载静态 ffmpeg 到 backend/embed/ffmpeg/）
-make build-embed
+# 指定平台
+./build.sh native all          # Linux + Windows，使用系统 ffmpeg
+./build.sh embed linux         # Linux，内置 ffmpeg
+./build.sh embed all           # Linux + Windows，内置 ffmpeg
 ```
 
 ## 技术栈
@@ -83,13 +85,12 @@ docker compose up -d --build
 ### 手动构建
 
 ```bash
-# 构建前端
+# 构建完整应用（前端 + 后端）
+./build.sh
+
+# 或分步执行
 cd frontend && npm install && npm run build
-
-# 嵌入前端到后端
 cp -r frontend/dist backend/embed/
-
-# 启动后端
 cd backend && go run .
 ```
 
