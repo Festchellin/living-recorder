@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"bufio"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -192,6 +194,126 @@ func (h *StreamHandler) getGroupPath(group *models.Group) string {
 		current = &parent
 	}
 	return strings.Join(parts, "/")
+}
+
+func (h *StreamHandler) parseJSON(r io.Reader) ([]importStream, error) {
+	var items []importStream
+	if err := json.NewDecoder(r).Decode(&items); err != nil {
+		return nil, fmt.Errorf("JSON解析失败: %w", err)
+	}
+	return items, nil
+}
+
+func (h *StreamHandler) parseCSV(r io.Reader) ([]importStream, error) {
+	reader := csv.NewReader(r)
+	records, err := reader.ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("CSV解析失败: %w", err)
+	}
+	if len(records) < 2 {
+		return nil, fmt.Errorf("CSV文件为空或只有表头")
+	}
+	headers := records[0]
+	colMap := make(map[string]int)
+	for i, h := range headers {
+		colMap[strings.TrimSpace(h)] = i
+	}
+
+	var items []importStream
+	for _, record := range records[1:] {
+		item := importStream{Enabled: true}
+		if idx, ok := colMap["name"]; ok && idx < len(record) {
+			item.Name = strings.TrimSpace(record[idx])
+		}
+		if idx, ok := colMap["url"]; ok && idx < len(record) {
+			item.URL = strings.TrimSpace(record[idx])
+		}
+		if idx, ok := colMap["protocol"]; ok && idx < len(record) {
+			item.Protocol = strings.TrimSpace(record[idx])
+		}
+		if idx, ok := colMap["enabled"]; ok && idx < len(record) {
+			if v, err := strconv.ParseBool(strings.TrimSpace(record[idx])); err == nil {
+				item.Enabled = v
+			}
+		}
+		if idx, ok := colMap["group_path"]; ok && idx < len(record) {
+			item.GroupPath = strings.TrimSpace(record[idx])
+		}
+		if idx, ok := colMap["remark"]; ok && idx < len(record) {
+			item.Remark = strings.TrimSpace(record[idx])
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func (h *StreamHandler) parseXLSX(data []byte) ([]importStream, error) {
+	f, err := excelize.OpenReader(strings.NewReader(string(data)))
+	if err != nil {
+		return nil, fmt.Errorf("Excel解析失败: %w", err)
+	}
+	defer f.Close()
+
+	rows, err := f.GetRows("Streams")
+	if err != nil {
+		rows, err = f.GetRows("Sheet1")
+		if err != nil {
+			return nil, fmt.Errorf("Excel中未找到数据表: %w", err)
+		}
+	}
+	if len(rows) < 2 {
+		return nil, fmt.Errorf("Excel工作表为空")
+	}
+
+	headers := rows[0]
+	colMap := make(map[string]int)
+	for i, h := range headers {
+		colMap[strings.TrimSpace(h)] = i
+	}
+
+	var items []importStream
+	for _, row := range rows[1:] {
+		item := importStream{Enabled: true}
+		if idx, ok := colMap["name"]; ok && idx < len(row) {
+			item.Name = strings.TrimSpace(row[idx])
+		}
+		if idx, ok := colMap["url"]; ok && idx < len(row) {
+			item.URL = strings.TrimSpace(row[idx])
+		}
+		if idx, ok := colMap["protocol"]; ok && idx < len(row) {
+			item.Protocol = strings.TrimSpace(row[idx])
+		}
+		if idx, ok := colMap["enabled"]; ok && idx < len(row) {
+			if v, err := strconv.ParseBool(strings.TrimSpace(row[idx])); err == nil {
+				item.Enabled = v
+			}
+		}
+		if idx, ok := colMap["group_path"]; ok && idx < len(row) {
+			item.GroupPath = strings.TrimSpace(row[idx])
+		}
+		if idx, ok := colMap["remark"]; ok && idx < len(row) {
+			item.Remark = strings.TrimSpace(row[idx])
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func (h *StreamHandler) parseTXT(r io.Reader) ([]importStream, error) {
+	var items []importStream
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var item importStream
+		if err := json.Unmarshal([]byte(line), &item); err != nil {
+			return nil, fmt.Errorf("JSON Lines解析失败: %w", err)
+		}
+		items = append(items, item)
+	}
+	return items, scanner.Err()
 }
 
 func (h *StreamHandler) findOrCreateGroupPath(path string) (*models.Group, error) {

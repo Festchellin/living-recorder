@@ -185,6 +185,58 @@ func TestExportHandler_InvalidFormat(t *testing.T) {
 	_ = result.Msg
 }
 
+func TestParseJSON(t *testing.T) {
+	db := setupTestDB(t)
+	h := &StreamHandler{db: db}
+	input := `[{"name":"cam1","url":"rtsp://example.com/1","protocol":"rtsp","enabled":true,"group_path":"","remark":"test"}]`
+
+	items, err := h.parseJSON(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Name != "cam1" {
+		t.Fatal("parseJSON failed")
+	}
+}
+
+func TestParseJSON_Invalid(t *testing.T) {
+	db := setupTestDB(t)
+	h := &StreamHandler{db: db}
+
+	_, err := h.parseJSON(strings.NewReader(`{invalid}`))
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestParseCSV(t *testing.T) {
+	db := setupTestDB(t)
+	h := &StreamHandler{db: db}
+	input := "name,url,protocol,enabled,group_path,remark\ncam1,rtsp://example.com/1,rtsp,true,,test\n"
+
+	items, err := h.parseCSV(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Name != "cam1" || !items[0].Enabled {
+		t.Fatal("parseCSV failed")
+	}
+}
+
+func TestParseTXT(t *testing.T) {
+	db := setupTestDB(t)
+	h := &StreamHandler{db: db}
+	input := `{"name":"cam1","url":"rtsp://example.com/1","protocol":"rtsp","enabled":true,"group_path":"","remark":"test"}` + "\n"
+
+	items, err := h.parseTXT(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Name != "cam1" {
+		t.Fatal("parseTXT failed")
+	}
+}
+
 func TestFindOrCreateGroupPath(t *testing.T) {
 	db := setupTestDB(t)
 	h := &StreamHandler{db: db}
