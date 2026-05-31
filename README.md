@@ -15,6 +15,50 @@
 - **实时监控** — WebSocket 推送流状态、存储用量
 - **Docker 部署** — 多阶段构建，镜像体积小，开箱即用
 
+## 下载
+
+从 [GitHub Releases](https://github.com/Festchellin/living-recorder/releases) 下载预编译的二进制文件：
+
+| 文件 | 平台 | 说明 |
+|------|------|------|
+| `living-recorder-linux-amd64` | Linux (amd64, 64-bit) | Linux x86-64 系统，直接运行 |
+| `living-recorder-windows-amd64.exe` | Windows (amd64, 64-bit) | Windows x86-64 系统，双击运行 |
+
+> 运行前请确保系统已安装 FFmpeg（见下方说明）。
+
+## 前置依赖：FFmpeg
+
+本项目依赖 **FFmpeg** 进行视频流的录制和实时预览转码。运行前需确保 `ffmpeg` 和 `ffprobe` 命令可用。
+
+### 安装 FFmpeg
+
+**Linux (Debian/Ubuntu)**
+```bash
+sudo apt install ffmpeg
+```
+
+**Linux (Alpine)**
+```bash
+apk add ffmpeg
+```
+
+**macOS**
+```bash
+brew install ffmpeg
+```
+
+**Windows**
+下载 https://ffmpeg.org/download.html 并添加到 PATH。
+
+### Docker（无需手动安装）
+
+使用 Docker 镜像时，FFmpeg 已内置在镜像中，无需额外安装。
+
+```bash
+docker pull ghcr.io/festchellin/living-recorder:1.0.0
+docker run -p 8080:8080 ghcr.io/festchellin/living-recorder:1.0.0
+```
+
 ## 技术栈
 
 | 层 | 技术 |
