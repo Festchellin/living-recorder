@@ -35,6 +35,8 @@ func Setup(db *gorm.DB, cfg *config.Config, recorder *services.RecorderService, 
 		api.GET("/streams/:id/probe-info", streamHandler.ProbeInfo)
 		api.POST("/streams/start-all", streamHandler.StartAll)
 		api.POST("/streams/stop-all", streamHandler.StopAll)
+		api.POST("/streams/export", streamHandler.Export)
+		api.POST("/streams/import", streamHandler.Import)
 		api.GET("/preview/:id/ws", streamHandler.PreviewWS)
 
 		api.GET("/tasks", taskHandler.List)
