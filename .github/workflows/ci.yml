@@ -88,6 +88,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: stable
+      - name: Extract version
+        run: echo "VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
       - name: Build frontend
         run: |
           cd frontend && npm ci && npm run build
@@ -97,11 +99,12 @@ jobs:
         env:
           GOOS: ${{ matrix.target.goos }}
           GOARCH: ${{ matrix.target.goarch }}
-        run: CGO_ENABLED=0 go build -o "../living-recorder-${{ matrix.target.name }}${{ matrix.target.ext }}" .
+          VERSION: ${{ env.VERSION }}
+        run: CGO_ENABLED=0 go build -o "../living-recorder-${VERSION}-${{ matrix.target.name }}${{ matrix.target.ext }}" .
       - name: Upload ${{ matrix.target.name }}
         uses: softprops/action-gh-release@v2
         with:
-          files: living-recorder-${{ matrix.target.name }}${{ matrix.target.ext }}
+          files: living-recorder-${{ env.VERSION }}-${{ matrix.target.name }}${{ matrix.target.ext }}
 
   release-embed:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -147,6 +150,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: stable
+      - name: Extract version
+        run: echo "VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
       - name: Build frontend
         run: |
           cd frontend && npm ci && npm run build
@@ -166,15 +171,16 @@ jobs:
         env:
           GOOS: ${{ matrix.target.goos }}
           GOARCH: ${{ matrix.target.goarch }}
-        run: CGO_ENABLED=0 go build -tags embedffmpeg -o "../living-recorder-${{ matrix.target.name }}${{ matrix.target.ext }}" .
+          VERSION: ${{ env.VERSION }}
+        run: CGO_ENABLED=0 go build -tags embedffmpeg -o "../living-recorder-${VERSION}-${{ matrix.target.name }}${{ matrix.target.ext }}" .
       - name: Upload ${{ matrix.target.name }}
         if: matrix.target.name != 'windows-arm64-embedded-ffmpeg'
         uses: softprops/action-gh-release@v2
         with:
-          files: living-recorder-${{ matrix.target.name }}${{ matrix.target.ext }}
+          files: living-recorder-${{ env.VERSION }}-${{ matrix.target.name }}${{ matrix.target.ext }}
       - name: Upload ${{ matrix.target.name }} and generate release notes
         if: matrix.target.name == 'windows-arm64-embedded-ffmpeg'
         uses: softprops/action-gh-release@v2
         with:
-          files: living-recorder-${{ matrix.target.name }}${{ matrix.target.ext }}
+          files: living-recorder-${{ env.VERSION }}-${{ matrix.target.name }}${{ matrix.target.ext }}
           generate_release_notes: true

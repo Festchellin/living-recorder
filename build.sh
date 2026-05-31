@@ -49,7 +49,11 @@ build() {
     GOOS=$1
     GOARCH=$2
     EXT=$3
-    NAME="living-recorder-${GOOS}-${GOARCH}${SUFFIX}${EXT}"
+    if [ -n "$VERSION" ]; then
+        NAME="living-recorder-${VERSION}-${GOOS}-${GOARCH}${SUFFIX}${EXT}"
+    else
+        NAME="living-recorder-${GOOS}-${GOARCH}${SUFFIX}${EXT}"
+    fi
 
     echo "==> Building $NAME..."
     cd backend
