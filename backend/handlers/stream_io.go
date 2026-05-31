@@ -6,10 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
+	"time"
 
 	"living-recorder/backend/models"
 
+	"github.com/gin-gonic/gin"
 	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
 )
@@ -49,6 +52,51 @@ type exportItem struct {
 }
 
 var validProtocols = map[string]bool{"rtsp": true, "rtmp": true, "flv": true, "hls": true}
+
+func (h *StreamHandler) Export(c *gin.Context) {
+	var req exportRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": "无效的请求: " + err.Error()})
+		return
+	}
+
+	query := h.db.Model(&models.Stream{}).Preload("Group")
+	if len(req.IDs) > 0 {
+		query = query.Where("id IN ?", req.IDs)
+	}
+	var streams []models.Stream
+	if err := query.Find(&streams).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "查询失败"})
+		return
+	}
+
+	ts := time.Now().Unix()
+	switch req.Format {
+	case "json":
+		c.Header("Content-Type", "application/json")
+		c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="streams-json-%d.json"`, ts))
+		h.writeJSON(c.Writer, streams)
+	case "csv":
+		c.Header("Content-Type", "text/csv")
+		c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="streams-csv-%d.csv"`, ts))
+		h.writeCSV(c.Writer, streams)
+	case "xlsx":
+		data, err := h.writeXLSX(streams)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "生成Excel失败"})
+			return
+		}
+		c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+		c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="streams-xlsx-%d.xlsx"`, ts))
+		c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", data)
+	case "txt":
+		c.Header("Content-Type", "text/plain")
+		c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="streams-txt-%d.txt"`, ts))
+		h.writeTXT(c.Writer, streams)
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": "不支持的格式: " + req.Format})
+	}
+}
 
 func (h *StreamHandler) toExportItems(streams []models.Stream) []exportItem {
 	items := make([]exportItem, len(streams))

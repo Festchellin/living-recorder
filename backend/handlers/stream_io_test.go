@@ -2,11 +2,14 @@ package handlers
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"living-recorder/backend/models"
 
+	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
@@ -117,6 +120,69 @@ func TestExportTXT(t *testing.T) {
 	if decoded.Name != "cam1" {
 		t.Fatal("TXT round-trip failed")
 	}
+}
+
+func TestExportHandler_JSON(t *testing.T) {
+	db := setupTestDB(t)
+	db.Create(&models.Stream{Name: "cam1", URL: "rtsp://example.com/1", Protocol: "rtsp"})
+
+	h := &StreamHandler{db: db}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest("POST", "/export", strings.NewReader(`{"format":"json"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.Export(c)
+
+	var result []importStream
+	json.Unmarshal(w.Body.Bytes(), &result)
+	if len(result) != 1 || result[0].Name != "cam1" {
+		t.Fatal("export failed")
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+		t.Fatalf("expected application/json, got %q", ct)
+	}
+}
+
+func TestExportHandler_CSV(t *testing.T) {
+	db := setupTestDB(t)
+	db.Create(&models.Stream{Name: "cam1", URL: "rtsp://example.com/1", Protocol: "rtsp"})
+
+	h := &StreamHandler{db: db}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest("POST", "/export", strings.NewReader(`{"format":"csv"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.Export(c)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "text/csv" {
+		t.Fatalf("expected text/csv, got %q", ct)
+	}
+}
+
+func TestExportHandler_InvalidFormat(t *testing.T) {
+	db := setupTestDB(t)
+	h := &StreamHandler{db: db}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest("POST", "/export", strings.NewReader(`{"format":"pdf"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.Export(c)
+
+	var result struct {
+		Code int    `json:"code"`
+		Msg  string `json:"message"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &result)
+	if result.Code != 1 {
+		t.Fatalf("expected error code 1, got %d", result.Code)
+	}
+	_ = result.Msg
 }
 
 func TestFindOrCreateGroupPath(t *testing.T) {
