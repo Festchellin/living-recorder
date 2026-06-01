@@ -235,6 +235,16 @@ func (s *RecorderService) FFmpegPath() string {
 	return s.ffmpeg
 }
 
+func (s *RecorderService) FFprobePath() string {
+	dir := filepath.Dir(s.ffmpeg)
+	base := filepath.Base(s.ffmpeg)
+	ffprobeBase := strings.Replace(base, "ffmpeg", "ffprobe", 1)
+	if dir == "." {
+		return ffprobeBase
+	}
+	return filepath.Join(dir, ffprobeBase)
+}
+
 type BatchResult struct {
 	Success int      `json:"success"`
 	Errors  []string `json:"errors,omitempty"`
@@ -250,7 +260,7 @@ func (s *RecorderService) IsReachable(stream *models.Stream) bool {
 	}
 	args = append(args, "-i", stream.URL)
 
-	cmd := exec.CommandContext(ctx, "ffprobe", args...)
+	cmd := exec.CommandContext(ctx, s.FFprobePath(), args...)
 	output, err := cmd.Output()
 	if err != nil {
 		return false
@@ -266,23 +276,47 @@ func (s *RecorderService) StartAll() BatchResult {
 	var streams []models.Stream
 	s.db.Where("enabled = ?", true).Find(&streams)
 
-	result := BatchResult{}
-	for _, stream := range streams {
-		if s.IsRecording(stream.ID) {
-			continue
-		}
-		if !s.IsReachable(&stream) {
-			errMsg := "信号源不可达，已跳过"
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %s", stream.Name, errMsg))
-			s.log.StreamWarn(stream.ID, models.EventStreamProbe, "全部启动跳过 — %s: %s", stream.Name, errMsg)
-			continue
-		}
-		if err := s.Start(stream.ID, nil); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", stream.Name, err))
-			continue
-		}
-		result.Success++
+	limit := s.cfg.MaxParallel
+	if limit < 1 {
+		limit = 1
 	}
+
+	result := BatchResult{}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, limit)
+
+	for i := range streams {
+		if s.IsRecording(streams[i].ID) {
+			continue
+		}
+		wg.Add(1)
+		go func(stream models.Stream) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			if !s.IsReachable(&stream) {
+				errMsg := "信号源不可达，已跳过"
+				mu.Lock()
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: %s", stream.Name, errMsg))
+				mu.Unlock()
+				s.log.StreamWarn(stream.ID, models.EventStreamProbe, "全部启动跳过 — %s: %s", stream.Name, errMsg)
+				return
+			}
+			if err := s.Start(stream.ID, nil); err != nil {
+				mu.Lock()
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", stream.Name, err))
+				mu.Unlock()
+				return
+			}
+			mu.Lock()
+			result.Success++
+			mu.Unlock()
+		}(streams[i])
+	}
+
+	wg.Wait()
 	return result
 }
 
@@ -294,19 +328,41 @@ func (s *RecorderService) StopAll() BatchResult {
 	}
 	s.mu.RUnlock()
 
-	result := BatchResult{}
-	for _, id := range active {
-		if err := s.Stop(id); err != nil {
-			var stream models.Stream
-			if s.db.First(&stream, id).Error == nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", stream.Name, err))
-			} else {
-				result.Errors = append(result.Errors, fmt.Sprintf("stream %d: %v", id, err))
-			}
-			continue
-		}
-		result.Success++
+	limit := s.cfg.MaxParallel
+	if limit < 1 {
+		limit = 1
 	}
+
+	result := BatchResult{}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, limit)
+
+	for _, id := range active {
+		wg.Add(1)
+		go func(id uint) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			if err := s.Stop(id); err != nil {
+				var stream models.Stream
+				mu.Lock()
+				if s.db.First(&stream, id).Error == nil {
+					result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", stream.Name, err))
+				} else {
+					result.Errors = append(result.Errors, fmt.Sprintf("stream %d: %v", id, err))
+				}
+				mu.Unlock()
+				return
+			}
+			mu.Lock()
+			result.Success++
+			mu.Unlock()
+		}(id)
+	}
+
+	wg.Wait()
 	return result
 }
 
@@ -544,7 +600,7 @@ func (s *RecorderService) probeAudioCodec(stream *models.Stream) (string, error)
 	}
 	args = append(args, "-i", stream.URL)
 
-	cmd := exec.CommandContext(ctx, "ffprobe", args...)
+	cmd := exec.CommandContext(ctx, s.FFprobePath(), args...)
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err

@@ -168,7 +168,7 @@ func (h *StreamHandler) Probe(c *gin.Context) {
 	}
 	args = append(args, "-i", stream.URL)
 
-	cmd := exec.CommandContext(ctx, "ffprobe", args...)
+	cmd := exec.CommandContext(ctx, h.recorder.FFprobePath(), args...)
 	output, err := cmd.Output()
 
 	if err != nil {
@@ -197,7 +197,7 @@ func (h *StreamHandler) ProbeInfo(c *gin.Context) {
 		return
 	}
 
-	info := probeSource(stream.URL, stream.Protocol)
+	info := probeSource(h.recorder.FFprobePath(), stream.URL, stream.Protocol)
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
@@ -228,7 +228,7 @@ func (h *StreamHandler) PreviewWS(c *gin.Context) {
 	fps := defaultInt(q.Get("fps"), 10)
 	crf := defaultInt(q.Get("crf"), 35)
 
-	info := probeSource(stream.URL, stream.Protocol)
+	info := probeSource(h.recorder.FFprobePath(), stream.URL, stream.Protocol)
 	if info.width > 0 {
 		if width > info.width || height > info.height {
 			width = min(width, info.width)
@@ -365,7 +365,7 @@ var (
 	probeCacheTTL = 60 * time.Second
 )
 
-func probeSource(url, protocol string) streamInfo {
+func probeSource(ffprobePath, url, protocol string) streamInfo {
 	if v, ok := probeCache.Load(url); ok {
 		cp := v.(cachedProbe)
 		if time.Since(cp.ts) < probeCacheTTL {
@@ -382,7 +382,7 @@ func probeSource(url, protocol string) streamInfo {
 	}
 	args = append(args, "-i", url)
 
-	cmd := exec.CommandContext(ctx, "ffprobe", args...)
+	cmd := exec.CommandContext(ctx, ffprobePath, args...)
 	output, err := cmd.Output()
 	if err != nil {
 		return streamInfo{}
