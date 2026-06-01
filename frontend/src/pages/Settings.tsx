@@ -26,7 +26,9 @@ export default function SettingsPage() {
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
 
   useEffect(() => {
-    api.config.get().then((data) => setConfig(data as unknown as ConfigData))
+    api.config.get()
+      .then((data) => setConfig(data as unknown as ConfigData))
+      .catch((err) => console.error('Failed to load config:', err))
   }, [])
 
   const handleSave = async () => {
@@ -51,7 +53,7 @@ export default function SettingsPage() {
         bucket: dirty.storage_s3_bucket ?? config?.storage_s3_bucket ?? '',
         region: dirty.storage_s3_region ?? config?.storage_s3_region ?? '',
       })
-      setTestResult({ ok: res.code === 0, message: res.message })
+      setTestResult({ ok: true, message: res.message })
     } catch (e) {
       setTestResult({ ok: false, message: String(e) })
     }
