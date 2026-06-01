@@ -23,6 +23,9 @@ usage() {
 MODE="${1:-native}"
 PLATFORM="${2:-linux}"
 
+# Auto-detect version from git tag, fall back to VERSION env var
+VERSION="${VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || true)}"
+
 if [ "$MODE" != "native" ] && [ "$MODE" != "embed" ]; then
     usage
 fi
