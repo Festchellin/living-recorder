@@ -54,6 +54,11 @@ All under `/api`, response shape `{"code": 0, "data": ...}`. SPA fallback: non-A
 ## Design system
 Glass/iridescent dark theme via CSS variables + Tailwind. shadcn/ui pattern (Radix primitives, CVA, clsx, tailwind-merge, lucide-react). Animations: shimmer, float, morph, pulse-soft, gradient.
 
+## Git conventions
+- Commit messages must be in Chinese (项目为中文).
+- Commits pushed to GitHub CI must have detailed, descriptive body explaining **what** changed and **why**.
+- Version bumps use annotated tags (`git tag -a`), not lightweight tags.
+
 ## Style notes
 - Chinese-locale project (UI, README, docs all in Chinese).
 - Frontend: `strict: true` TypeScript, `noUnusedLocals/Parameters` on.

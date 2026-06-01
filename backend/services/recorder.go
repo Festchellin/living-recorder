@@ -47,6 +47,7 @@ type RecorderService struct {
 	mu             sync.RWMutex
 	streams        map[uint]*StreamProcess
 	onStatusChange StatusChangeCallback
+	retryCounts    sync.Map
 }
 
 func NewRecorderService(db *gorm.DB, cfg *config.RecorderConfig, ffmpegPath string, store StorageBackend) *RecorderService {
@@ -59,6 +60,14 @@ func NewRecorderService(db *gorm.DB, cfg *config.RecorderConfig, ffmpegPath stri
 		log:         NewLogWriter(db),
 		streams:     make(map[uint]*StreamProcess),
 	}
+}
+
+func (s *RecorderService) streamRetryCount(streamID uint) int {
+	v, _ := s.retryCounts.Load(streamID)
+	if v == nil {
+		return 0
+	}
+	return v.(int)
 }
 
 func (s *RecorderService) OnStatusChange(cb StatusChangeCallback) {
@@ -372,15 +381,17 @@ func (s *RecorderService) buildFFmpegArgs(stream *models.Stream, task *models.Re
 	switch stream.Protocol {
 	case "rtsp":
 		args = append(args, "-rtsp_transport", "tcp")
+		args = append(args, "-rtsp_flags", "prefer_tcp")
+		args = append(args, "-stimeout", "10000000")
 	case "rtmp", "flv":
+		args = append(args, "-fflags", "+nobuffer")
 	case "hls":
 	default:
 	}
 
-	args = append(args, "-fflags", "+genpts+igndts+nobuffer")
 	args = append(args, "-analyzeduration", "100M")
 	args = append(args, "-probesize", "100M")
-	args = append(args, "-flags", "low_delay")
+	args = append(args, "-re")
 	args = append(args, "-i", stream.URL)
 	if task.VideoCodec != "copy" {
 		args = append(args, "-vf", "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709")
@@ -403,14 +414,20 @@ func (s *RecorderService) buildFFmpegArgs(stream *models.Stream, task *models.Re
 		args = append(args, "-b:a", task.AudioBitrate)
 	}
 
-	if task.SegmentSec > 0 {
+	segSec := task.SegmentSec
+	if segSec <= 0 {
+		segSec = s.cfg.SegmentDuration
+	}
+	if segSec > 0 {
 		args = append(args, "-f", "segment")
-		args = append(args, "-segment_time", fmt.Sprintf("%d", task.SegmentSec))
+		args = append(args, "-segment_time", fmt.Sprintf("%d", segSec))
 		args = append(args, "-reset_timestamps", "1")
 		args = append(args, "-strftime", "1")
+		args = append(args, "-movflags", "+faststart")
+	} else {
+		args = append(args, "-movflags", "+faststart")
 	}
 
-	args = append(args, "-movflags", "+faststart")
 	outputPath := s.buildOutputPath(stream, task)
 	args = append(args, "-y", outputPath)
 
@@ -540,15 +557,39 @@ func (s *RecorderService) watchProcess(sp *StreamProcess) {
 
 	close(sp.done)
 
+	if status == "success" {
+		s.retryCounts.Delete(sp.StreamID)
+	}
+
 	if status == "failed" && s.cfg.RestartOnFailure > 0 && !sp.userStopped.Load() {
-		log.Printf("[recorder] stream %d (%s): 将在 3 秒后自动重连 (restart_on_failure=%d)",
-			sp.StreamID, sp.StreamName, s.cfg.RestartOnFailure)
+		attempt := s.streamRetryCount(sp.StreamID) + 1
+		if attempt > s.cfg.RestartOnFailure {
+			log.Printf("[recorder] stream %d (%s): 已达最大重试次数 %d，放弃重连",
+				sp.StreamID, sp.StreamName, s.cfg.RestartOnFailure)
+			s.retryCounts.Delete(sp.StreamID)
+			return
+		}
+
+		videoCodec := s.cfg.DefaultVideoCodec
+		audioCodec := s.cfg.DefaultAudioCodec
+		if s.cfg.RetryWithReEncode && attempt >= 2 {
+			videoCodec = "libx264"
+			audioCodec = "aac"
+			log.Printf("[recorder] stream %d (%s): 第 %d 次重试，降级为重新编码 (%s/%s)",
+				sp.StreamID, sp.StreamName, attempt, videoCodec, audioCodec)
+		}
+
+		s.retryCounts.Store(sp.StreamID, attempt)
+
+		log.Printf("[recorder] stream %d (%s): 将在 3 秒后自动重连 (第 %d 次)",
+			sp.StreamID, sp.StreamName, attempt)
 		time.Sleep(3 * time.Second)
-		s.Start(sp.StreamID, &models.RecordTask{
+
+		_ = s.Start(sp.StreamID, &models.RecordTask{
 			StreamID:       sp.StreamID,
 			OutputTemplate: s.cfg.DefaultOutputTemplate,
-			VideoCodec:     s.cfg.DefaultVideoCodec,
-			AudioCodec:     s.cfg.DefaultAudioCodec,
+			VideoCodec:     videoCodec,
+			AudioCodec:     audioCodec,
 		})
 	}
 }

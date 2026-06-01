@@ -46,3 +46,4 @@ backend/embed/ffmpeg/*
 backend/build/
 build/living-recorder-linux
 build/living-recorder.exe
+living-recorder-v*-*

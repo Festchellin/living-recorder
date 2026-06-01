@@ -52,13 +52,15 @@ type S3StorageConfig struct {
 }
 
 type RecorderConfig struct {
-	MaxParallel          int    `mapstructure:"max_parallel"`
-	RestartOnFailure     int    `mapstructure:"restart_on_failure"`
-	HealthCheckInterval  int    `mapstructure:"health_check_interval"`
-	DefaultVideoCodec    string `mapstructure:"default_video_codec"`
-	DefaultAudioCodec    string `mapstructure:"default_audio_codec"`
+	MaxParallel           int    `mapstructure:"max_parallel"`
+	RestartOnFailure      int    `mapstructure:"restart_on_failure"`
+	HealthCheckInterval   int    `mapstructure:"health_check_interval"`
+	DefaultVideoCodec     string `mapstructure:"default_video_codec"`
+	DefaultAudioCodec     string `mapstructure:"default_audio_codec"`
 	DefaultOutputTemplate string `mapstructure:"default_output_template"`
-	StorageLocalPath     string // injected at runtime from storage.local.path
+	SegmentDuration       int    `mapstructure:"segment_duration"`         // >0 启用分段录制（秒）
+	RetryWithReEncode     bool   `mapstructure:"retry_with_re_encode"`     // 重试时降级为重新编码
+	StorageLocalPath      string // injected at runtime from storage.local.path
 }
 
 func Load() (*Config, error) {
@@ -137,4 +139,6 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("recorder.default_video_codec", "copy")
 	v.SetDefault("recorder.default_audio_codec", "copy")
 	v.SetDefault("recorder.default_output_template", "{name}/{date}_{time}.mp4")
+	v.SetDefault("recorder.segment_duration", 600)
+	v.SetDefault("recorder.retry_with_re_encode", true)
 }
