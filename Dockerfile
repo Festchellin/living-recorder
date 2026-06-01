@@ -24,8 +24,11 @@ RUN CGO_ENABLED=0 go build -o /living-recorder .
 
 # ---- Runtime ----
 FROM alpine:${ALPINE_VERSION}
+ENV TZ=Asia/Shanghai
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apk/repositories && \
-    apk add --no-cache ffmpeg ca-certificates tzdata
+    apk add --no-cache ffmpeg ca-certificates tzdata && \
+    cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+    echo "Asia/Shanghai" > /etc/timezone
 
 EXPOSE 8080
 

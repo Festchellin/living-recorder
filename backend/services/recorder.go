@@ -32,6 +32,7 @@ type StreamProcess struct {
 	userStopped atomic.Bool
 	stderrBuf  bytes.Buffer
 	stderrDone chan struct{}
+	done       chan struct{}
 }
 
 type StatusChangeCallback func(streamID uint)
@@ -128,6 +129,7 @@ func (s *RecorderService) Start(streamID uint, task *models.RecordTask) error {
 		OutputPath: outputPath,
 		StreamName: stream.Name,
 		stderrDone: make(chan struct{}),
+		done:       make(chan struct{}),
 	}
 	s.streams[streamID] = sp
 
@@ -168,19 +170,16 @@ func (s *RecorderService) Stop(streamID uint) error {
 
 	s.log.StreamInfo(streamID, models.EventRecordingStopped, "停止录制: %s", sp.StreamName)
 
-	sp.stdin.Write([]byte("q\n"))
-	sp.stdin.Close()
+	if sp.stdin != nil {
+		sp.stdin.Write([]byte("q\n"))
+		sp.stdin.Close()
+	}
 
-	done := make(chan struct{})
-	go func() {
-		sp.Cmd.Wait()
-		close(done)
-	}()
 	select {
-	case <-done:
+	case <-sp.done:
 	case <-time.After(5 * time.Second):
 		sp.Cmd.Process.Kill()
-		<-done
+		<-sp.done
 	}
 
 	if s.onStatusChange != nil {
@@ -313,6 +312,10 @@ func (s *RecorderService) buildFFmpegArgs(stream *models.Stream, task *models.Re
 	default:
 	}
 
+	args = append(args, "-fflags", "+genpts+igndts")
+	if task.VideoCodec == "copy" {
+		args = append(args, "-skip_initial_broken_packets", "1")
+	}
 	args = append(args, "-i", stream.URL)
 	if task.VideoCodec != "copy" {
 		args = append(args, "-vf", "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709")
@@ -387,7 +390,12 @@ func (s *RecorderService) buildGroupPath(group *models.Group) string {
 func (s *RecorderService) watchProcess(sp *StreamProcess) {
 	err := sp.Cmd.Wait()
 	endedAt := time.Now()
-	<-sp.stderrDone
+
+	select {
+	case <-sp.stderrDone:
+	case <-time.After(3 * time.Second):
+		log.Printf("[recorder] stream %d: stderr timeout, continuing", sp.StreamID)
+	}
 
 	s.mu.Lock()
 	delete(s.streams, sp.StreamID)
@@ -445,6 +453,20 @@ func (s *RecorderService) watchProcess(sp *StreamProcess) {
 
 	if s.onStatusChange != nil {
 		go s.onStatusChange(sp.StreamID)
+	}
+
+	close(sp.done)
+
+	if status == "failed" && s.cfg.RestartOnFailure > 0 && !sp.userStopped.Load() {
+		log.Printf("[recorder] stream %d (%s): 将在 3 秒后自动重连 (restart_on_failure=%d)",
+			sp.StreamID, sp.StreamName, s.cfg.RestartOnFailure)
+		time.Sleep(3 * time.Second)
+		s.Start(sp.StreamID, &models.RecordTask{
+			StreamID:       sp.StreamID,
+			OutputTemplate: s.cfg.DefaultOutputTemplate,
+			VideoCodec:     s.cfg.DefaultVideoCodec,
+			AudioCodec:     s.cfg.DefaultAudioCodec,
+		})
 	}
 }
 

@@ -286,6 +286,7 @@ func (h *StreamHandler) PreviewWS(c *gin.Context) {
 	if hwEnc != "h264_videotoolbox" && hwEnc != "h264_amf" && hwEnc != "h264_qsv" {
 		args = append(args, "-crf", fmt.Sprintf("%d", crf))
 	}
+	args = append(args, "-bsf:v", "dump_extra")
 	args = append(args, "-c:a", "aac")
 	args = append(args, "-f", "mpegts")
 	args = append(args, "-flush_packets", "1")
@@ -295,8 +296,16 @@ func (h *StreamHandler) PreviewWS(c *gin.Context) {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, h.recorder.FFmpegPath(), args...)
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		log.Printf("preview stream %d stdout pipe failed: %v", stream.ID, err)
+		return
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		log.Printf("preview stream %d stderr pipe failed: %v", stream.ID, err)
+		return
+	}
 
 	if err := cmd.Start(); err != nil {
 		log.Printf("preview stream %d ffmpeg start failed: %v", stream.ID, err)
@@ -336,7 +345,6 @@ func (h *StreamHandler) PreviewWS(c *gin.Context) {
 	}
 
 	cancel()
-	cmd.Process.Kill()
 	<-done
 	cmd.Wait()
 }
