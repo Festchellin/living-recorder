@@ -423,9 +423,8 @@ func (s *RecorderService) buildFFmpegArgs(stream *models.Stream, task *models.Re
 		args = append(args, "-segment_time", fmt.Sprintf("%d", segSec))
 		args = append(args, "-reset_timestamps", "1")
 		args = append(args, "-strftime", "1")
-		args = append(args, "-movflags", "+faststart")
 	} else {
-		args = append(args, "-movflags", "+faststart")
+		args = append(args, "-movflags", "+frag_keyframe+empty_moov")
 	}
 
 	outputPath := s.buildOutputPath(stream, task)

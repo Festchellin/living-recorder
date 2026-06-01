@@ -14,7 +14,7 @@ recorder:
     health_check_interval: 30
     max_parallel: 50
     restart_on_failure: 3
-    segment_duration: 600
+    segment_duration: 0
     retry_with_re_encode: true
 server:
     mode: debug
