@@ -10,10 +10,12 @@ mediamtx:
 recorder:
     default_audio_codec: aac
     default_output_template: '{name}/{date}_{time}.mp4'
-    default_video_codec: copy
+    default_video_codec: libx264
     health_check_interval: 30
     max_parallel: 50
     restart_on_failure: 3
+    segment_duration: 600
+    retry_with_re_encode: true
 server:
     mode: debug
     port: "8080"
