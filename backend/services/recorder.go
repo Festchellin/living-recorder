@@ -321,10 +321,10 @@ func (s *RecorderService) buildFFmpegArgs(stream *models.Stream, task *models.Re
 	default:
 	}
 
-	args = append(args, "-fflags", "+genpts+igndts")
-	if task.VideoCodec == "copy" {
-		args = append(args, "-skip_initial_broken_packets", "1")
-	}
+	args = append(args, "-fflags", "+genpts+igndts+nobuffer")
+	args = append(args, "-analyzeduration", "100M")
+	args = append(args, "-probesize", "100M")
+	args = append(args, "-flags", "low_delay")
 	args = append(args, "-i", stream.URL)
 	if task.VideoCodec != "copy" {
 		args = append(args, "-vf", "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709")
