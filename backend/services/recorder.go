@@ -31,6 +31,7 @@ type StreamProcess struct {
 	StreamName string
 	userStopped atomic.Bool
 	stderrBuf  bytes.Buffer
+	stderrDone chan struct{}
 }
 
 type StatusChangeCallback func(streamID uint)
@@ -92,6 +93,14 @@ func (s *RecorderService) Start(streamID uint, task *models.RecordTask) error {
 		}
 	}
 
+	if task.AudioCodec == "copy" {
+		codec, err := s.probeAudioCodec(&stream)
+		if err == nil && codec != "" && !isAudioCodecMP4Compatible(codec) {
+			log.Printf("[recorder] stream %d: audio codec %q not compatible with mp4, falling back to aac", streamID, codec)
+			task.AudioCodec = "aac"
+		}
+	}
+
 	args := s.buildFFmpegArgs(&stream, task)
 	outputPath := args[len(args)-1]
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
@@ -118,6 +127,7 @@ func (s *RecorderService) Start(streamID uint, task *models.RecordTask) error {
 		Status:     "recording",
 		OutputPath: outputPath,
 		StreamName: stream.Name,
+		stderrDone: make(chan struct{}),
 	}
 	s.streams[streamID] = sp
 
@@ -131,7 +141,10 @@ func (s *RecorderService) Start(streamID uint, task *models.RecordTask) error {
 		return fmt.Errorf("start ffmpeg: %w", err)
 	}
 
-	go io.Copy(&sp.stderrBuf, stderr)
+	go func() {
+		io.Copy(&sp.stderrBuf, stderr)
+		close(sp.stderrDone)
+	}()
 	go s.watchProcess(sp)
 
 	if s.onStatusChange != nil {
@@ -374,6 +387,7 @@ func (s *RecorderService) buildGroupPath(group *models.Group) string {
 func (s *RecorderService) watchProcess(sp *StreamProcess) {
 	err := sp.Cmd.Wait()
 	endedAt := time.Now()
+	<-sp.stderrDone
 
 	s.mu.Lock()
 	delete(s.streams, sp.StreamID)
@@ -387,42 +401,44 @@ func (s *RecorderService) watchProcess(sp *StreamProcess) {
 	}
 	duration := int(endedAt.Sub(sp.StartedAt).Seconds())
 
-	status := "success"
+	if sp.stderrBuf.Len() > 0 {
+		log.Printf("[recorder] ffmpeg stderr for stream %d (%s):\n%s", sp.StreamID, sp.StreamName, sp.stderrBuf.String())
+	}
+
+	status := "failed"
 	errMsg := ""
-	eventType := models.EventRecordingStopped
+	eventType := models.EventRecordingFailed
 	msg := fmt.Sprintf("录制结束: %s (时长 %d秒)", sp.StreamName, duration)
 
 	if fileSize > 0 {
 		msg += fmt.Sprintf(", 大小 %.1fMB", float64(fileSize)/1024/1024)
 	}
 
-	if sp.stderrBuf.Len() > 0 {
-		log.Printf("[recorder] ffmpeg stderr for stream %d (%s):\n%s", sp.StreamID, sp.StreamName, sp.stderrBuf.String())
-	}
-
-	if err != nil {
-		if sp.userStopped.Load() {
-			status = "success"
-			eventType = models.EventRecordingStopped
-			msg = fmt.Sprintf("录制已停止: %s (时长 %d秒)", sp.StreamName, duration)
-		} else if isProcessKilled(err) {
-			status = "success"
-			eventType = models.EventRecordingStopped
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				errMsg = fmt.Sprintf("exit code %d (%#x)", exitErr.ExitCode(), uint32(exitErr.ExitCode()))
-			}
-			msg = fmt.Sprintf("录制意外终止: %s (时长 %d秒, %s)", sp.StreamName, duration, errMsg)
-			log.Printf("[recorder] stream %d (%s) 进程意外退出, code=%s", sp.StreamID, sp.StreamName, errMsg)
-		} else {
-			status = "failed"
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				errMsg = fmt.Sprintf("exit code %d (%#x)", exitErr.ExitCode(), uint32(exitErr.ExitCode()))
-			} else {
-				errMsg = err.Error()
-			}
-			eventType = models.EventRecordingFailed
-			msg = fmt.Sprintf("录制失败: %s — %s", sp.StreamName, errMsg)
+	if err == nil {
+		status = "success"
+		eventType = models.EventRecordingStopped
+		msg = fmt.Sprintf("录制结束: %s (时长 %d秒)", sp.StreamName, duration)
+	} else if sp.userStopped.Load() {
+		status = "success"
+		eventType = models.EventRecordingStopped
+		msg = fmt.Sprintf("录制已停止: %s (时长 %d秒)", sp.StreamName, duration)
+	} else if isProcessKilled(err) {
+		status = "failed"
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			errMsg = fmt.Sprintf("exit code %d (%#x)", exitErr.ExitCode(), uint32(exitErr.ExitCode()))
 		}
+		eventType = models.EventRecordingFailed
+		msg = fmt.Sprintf("录制失败: %s — %s", sp.StreamName, errMsg)
+		log.Printf("[recorder] stream %d (%s) 进程异常退出, code=%s", sp.StreamID, sp.StreamName, errMsg)
+	} else {
+		status = "failed"
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			errMsg = fmt.Sprintf("exit code %d (%#x)", exitErr.ExitCode(), uint32(exitErr.ExitCode()))
+		} else {
+			errMsg = err.Error()
+		}
+		eventType = models.EventRecordingFailed
+		msg = fmt.Sprintf("录制失败: %s — %s", sp.StreamName, errMsg)
 	}
 
 	s.log.StreamRecordingLog(sp.StreamID, eventType, status, msg, errMsg, sp.OutputPath, fileSize, duration, sp.StartedAt, endedAt)
@@ -435,7 +451,81 @@ func (s *RecorderService) watchProcess(sp *StreamProcess) {
 var (
 	hwEncoderOnce sync.Once
 	hwEncoder     string
+
+	audioCodecCache      sync.Map
+	audioCodecCacheTTL   = 60 * time.Second
+
+	incompatibleAudioCodecs = map[string]bool{
+		"pcm_mulaw": true,
+		"pcm_alaw":  true,
+		"pcm_s16le": true,
+		"pcm_s16be": true,
+		"pcm_u8":    true,
+		"pcm_u16le": true,
+		"pcm_u16be": true,
+		"pcm_f32le": true,
+		"pcm_f32be": true,
+		"pcm_s24le": true,
+		"pcm_s32le": true,
+		"adpcm_g726": true,
+	}
 )
+
+func isAudioCodecMP4Compatible(codec string) bool {
+	return !incompatibleAudioCodecs[codec]
+}
+
+func (s *RecorderService) probeAudioCodec(stream *models.Stream) (string, error) {
+	if v, ok := audioCodecCache.Load(stream.URL); ok {
+		entry := v.(struct {
+			codec string
+			ts    time.Time
+		})
+		if time.Since(entry.ts) < audioCodecCacheTTL {
+			return entry.codec, nil
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	args := []string{"-v", "quiet", "-print_format", "json", "-show_streams"}
+	if stream.Protocol == "rtsp" {
+		args = append(args, "-rtsp_transport", "tcp")
+	}
+	args = append(args, "-i", stream.URL)
+
+	cmd := exec.CommandContext(ctx, "ffprobe", args...)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+
+	var result struct {
+		Streams []struct {
+			CodecType string `json:"codec_type"`
+			CodecName string `json:"codec_name"`
+		} `json:"streams"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		return "", err
+	}
+
+	codec := ""
+	for _, s := range result.Streams {
+		if s.CodecType == "audio" {
+			codec = s.CodecName
+			break
+		}
+	}
+
+	audioCodecCache.Store(stream.URL, struct {
+		codec string
+		ts    time.Time
+	}{codec, time.Now()})
+
+	return codec, nil
+}
 
 func findVAAPIDevice() string {
 	entries, err := os.ReadDir("/dev/dri")
@@ -501,11 +591,7 @@ func (s *RecorderService) GetHardwareEncoder() string {
 
 func isProcessKilled(err error) bool {
 	if exitErr, ok := err.(*exec.ExitError); ok {
-		code := exitErr.ExitCode()
-		// -1 = killed by signal (Unix)
-		// 1 = killed by Process.Kill() / TerminateProcess  (Windows)
-		// uint32(code) == 0xFFFFFFEA = forced termination (Windows, works on both 32/64-bit)
-		return code == -1 || code == 1 || uint32(code) == 0xFFFFFFEA
+		return exitErr.ExitCode() == -1
 	}
 	return false
 }

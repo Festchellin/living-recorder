@@ -52,10 +52,12 @@ build() {
     GOOS=$1
     GOARCH=$2
     EXT=$3
+    OUTPUT_DIR="${OUTPUT_DIR:-.}"
+    mkdir -p "$OUTPUT_DIR"
     if [ -n "$VERSION" ]; then
-        NAME="living-recorder-${VERSION}-${GOOS}-${GOARCH}${SUFFIX}${EXT}"
+        NAME="${OUTPUT_DIR}/living-recorder-${VERSION}-${GOOS}-${GOARCH}${SUFFIX}${EXT}"
     else
-        NAME="living-recorder-${GOOS}-${GOARCH}${SUFFIX}${EXT}"
+        NAME="${OUTPUT_DIR}/living-recorder-${GOOS}-${GOARCH}${SUFFIX}${EXT}"
     fi
 
     echo "==> Building $NAME..."

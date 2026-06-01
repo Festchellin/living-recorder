@@ -8,7 +8,7 @@ mediamtx:
     rtmp_url: rtmp://192.168.2.102:1935
     url: http://192.168.2.102:8889
 recorder:
-    default_audio_codec: copy
+    default_audio_codec: aac
     default_output_template: '{name}/{date}_{time}.mp4'
     default_video_codec: copy
     health_check_interval: 30
