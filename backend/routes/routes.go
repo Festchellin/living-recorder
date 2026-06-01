@@ -47,6 +47,7 @@ func Setup(db *gorm.DB, cfg *config.Config, recorder *services.RecorderService, 
 		api.GET("/status", statusHandler.GetStatus)
 		api.GET("/config", statusHandler.GetConfig)
 		api.PUT("/config", statusHandler.UpdateConfig)
+		api.POST("/config/test-s3", statusHandler.TestS3Connection)
 
 		api.GET("/groups", groupHandler.List)
 		api.POST("/groups", groupHandler.Create)

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"living-recorder/backend/config"
 
@@ -94,9 +95,16 @@ type S3Storage struct {
 }
 
 func NewS3Storage(cfg config.S3StorageConfig) (*S3Storage, error) {
-	client, err := minio.New(cfg.Endpoint, &minio.Options{
+	endpoint := cfg.Endpoint
+	secure := true
+	if strings.Contains(endpoint, "://") {
+		secure = strings.HasPrefix(endpoint, "https://")
+		endpoint = strings.TrimPrefix(endpoint, "https://")
+		endpoint = strings.TrimPrefix(endpoint, "http://")
+	}
+	client, err := minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
-		Secure: false,
+		Secure: secure,
 		Region: cfg.Region,
 	})
 	if err != nil {

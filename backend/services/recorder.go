@@ -42,6 +42,7 @@ type RecorderService struct {
 	cfg            *config.RecorderConfig
 	ffmpeg         string
 	store          StorageBackend
+	storageType    string
 	log            *LogWriter
 	mu             sync.RWMutex
 	streams        map[uint]*StreamProcess
@@ -50,17 +51,25 @@ type RecorderService struct {
 
 func NewRecorderService(db *gorm.DB, cfg *config.RecorderConfig, ffmpegPath string, store StorageBackend) *RecorderService {
 	return &RecorderService{
-		db:      db,
-		cfg:     cfg,
-		ffmpeg:  ffmpegPath,
-		store:   store,
-		log:     NewLogWriter(db),
-		streams: make(map[uint]*StreamProcess),
+		db:          db,
+		cfg:         cfg,
+		ffmpeg:      ffmpegPath,
+		store:       store,
+		storageType: "local",
+		log:         NewLogWriter(db),
+		streams:     make(map[uint]*StreamProcess),
 	}
 }
 
 func (s *RecorderService) OnStatusChange(cb StatusChangeCallback) {
 	s.onStatusChange = cb
+}
+
+func (s *RecorderService) SetStore(storageType string, store StorageBackend) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.storageType = storageType
+	s.store = store
 }
 
 func (s *RecorderService) ResetStaleStatuses() {
@@ -447,6 +456,24 @@ func (s *RecorderService) watchProcess(sp *StreamProcess) {
 		}
 		eventType = models.EventRecordingFailed
 		msg = fmt.Sprintf("录制失败: %s — %s", sp.StreamName, errMsg)
+	}
+
+	if status == "success" && s.storageType == "s3" && fileSize > 0 {
+		destPath := strings.TrimPrefix(sp.OutputPath, s.cfg.StorageLocalPath)
+		destPath = strings.TrimPrefix(destPath, "/")
+		destPath = strings.TrimPrefix(destPath, "\\")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		if ctxErr := s.store.Save(ctx, sp.OutputPath, destPath); ctxErr != nil {
+			status = "failed"
+			eventType = models.EventRecordingFailed
+			errMsg = fmt.Sprintf("s3 upload failed: %v", ctxErr)
+			msg += fmt.Sprintf("，S3 上传失败: %v", ctxErr)
+			log.Printf("[recorder] stream %d: s3 upload failed: %v", sp.StreamID, ctxErr)
+		} else {
+			os.Remove(sp.OutputPath)
+			log.Printf("[recorder] stream %d: uploaded to s3, removed local file", sp.StreamID)
+		}
+		cancel()
 	}
 
 	s.log.StreamRecordingLog(sp.StreamID, eventType, status, msg, errMsg, sp.OutputPath, fileSize, duration, sp.StartedAt, endedAt)

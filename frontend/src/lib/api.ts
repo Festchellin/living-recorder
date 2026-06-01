@@ -159,7 +159,12 @@ export const api = {
   config: {
     get: () => request<Record<string, unknown>>('/api/config'),
     update: (data: Record<string, unknown>) =>
-      request<void>('/api/config', { method: 'PUT', body: JSON.stringify(data) }),
+      request<{ code: number; message: string }>('/api/config', { method: 'PUT', body: JSON.stringify(data) }),
+    testS3: (data: Record<string, unknown>) =>
+      request<{ code: number; message: string }>('/api/config/test-s3', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
   },
 }
 
