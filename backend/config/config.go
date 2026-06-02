@@ -139,6 +139,6 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("recorder.default_video_codec", "copy")
 	v.SetDefault("recorder.default_audio_codec", "copy")
 	v.SetDefault("recorder.default_output_template", "{name}/{date}_{time}.mp4")
-	v.SetDefault("recorder.segment_duration", 600)
+	v.SetDefault("recorder.segment_duration", 0)
 	v.SetDefault("recorder.retry_with_re_encode", true)
 }
