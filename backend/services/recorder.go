@@ -21,6 +21,8 @@ import (
 	"gorm.io/gorm"
 )
 
+const minDiskSpaceGB = 1.0
+
 type StreamProcess struct {
 	StreamID   uint
 	TaskID     uint
@@ -70,20 +72,8 @@ func (s *RecorderService) getDiskFreeGB(path string) float64 {
 	return float64(stat.Bavail*uint64(stat.Bsize)) / (1 << 30)
 }
 
-func (s *RecorderService) getRetryCount(streamID uint) int {
-	var stream models.Stream
-	if err := s.db.Select("retry_count").First(&stream, streamID).Error; err != nil {
-		return 0
-	}
-	return stream.RetryCount
-}
-
 func (s *RecorderService) setRetryCount(streamID uint, count int) {
 	s.db.Model(&models.Stream{}).Where("id = ?", streamID).Update("retry_count", count)
-}
-
-func (s *RecorderService) streamRetryCount(streamID uint) int {
-	return s.getRetryCount(streamID)
 }
 
 func (s *RecorderService) OnStatusChange(cb StatusChangeCallback) {
@@ -114,8 +104,8 @@ func (s *RecorderService) Start(streamID uint, task *models.RecordTask) error {
 	}
 
 	free := s.getDiskFreeGB(s.cfg.StorageLocalPath)
-	if free >= 0 && free < 1.0 {
-		return fmt.Errorf("磁盘空间不足: %.1fGB 可用，需至少 1GB", free)
+	if free >= 0 && free < minDiskSpaceGB {
+		return fmt.Errorf("磁盘空间不足: %.1fGB 可用，需至少 %.0fGB", free, minDiskSpaceGB)
 	}
 
 	var stream models.Stream
@@ -275,11 +265,6 @@ func (s *RecorderService) FFprobePath() string {
 	return filepath.Join(dir, ffprobeBase)
 }
 
-type BatchResult struct {
-	Success int      `json:"success"`
-	Errors  []string `json:"errors,omitempty"`
-}
-
 func (s *RecorderService) IsReachable(stream *models.Stream) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -302,7 +287,7 @@ func (s *RecorderService) IsReachable(stream *models.Stream) bool {
 	return json.Unmarshal(output, &info) == nil && len(info.Streams) > 0
 }
 
-func (s *RecorderService) StartAll() BatchResult {
+func (s *RecorderService) StartAll() {
 	var streams []models.Stream
 	s.db.Where("enabled = ?", true).Find(&streams)
 
@@ -311,46 +296,29 @@ func (s *RecorderService) StartAll() BatchResult {
 		limit = 1
 	}
 
-	result := BatchResult{}
-	var mu sync.Mutex
-	var wg sync.WaitGroup
 	sem := make(chan struct{}, limit)
 
 	for i := range streams {
 		if s.IsRecording(streams[i].ID) {
 			continue
 		}
-		wg.Add(1)
 		go func(stream models.Stream) {
-			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
 			if !s.IsReachable(&stream) {
-				errMsg := "信号源不可达，已跳过"
-				mu.Lock()
-				result.Errors = append(result.Errors, fmt.Sprintf("%s: %s", stream.Name, errMsg))
-				mu.Unlock()
-				s.log.StreamWarn(stream.ID, models.EventStreamProbe, "全部启动跳过 — %s: %s", stream.Name, errMsg)
+				s.log.StreamWarn(stream.ID, models.EventStreamProbe, "全部启动跳过 — 信号源不可达: %s", stream.Name)
 				return
 			}
 			if err := s.Start(stream.ID, nil); err != nil {
-				mu.Lock()
-				result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", stream.Name, err))
-				mu.Unlock()
+				log.Printf("[recorder] start all: stream %d (%s) 启动失败: %v", stream.ID, stream.Name, err)
 				return
 			}
-			mu.Lock()
-			result.Success++
-			mu.Unlock()
 		}(streams[i])
 	}
-
-	wg.Wait()
-	return result
 }
 
-func (s *RecorderService) StopAll() BatchResult {
+func (s *RecorderService) StopAll() {
 	s.mu.RLock()
 	active := make([]uint, 0, len(s.streams))
 	for id := range s.streams {
@@ -363,37 +331,23 @@ func (s *RecorderService) StopAll() BatchResult {
 		limit = 1
 	}
 
-	result := BatchResult{}
-	var mu sync.Mutex
-	var wg sync.WaitGroup
 	sem := make(chan struct{}, limit)
 
 	for _, id := range active {
-		wg.Add(1)
 		go func(id uint) {
-			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
 			if err := s.Stop(id); err != nil {
 				var stream models.Stream
-				mu.Lock()
 				if s.db.First(&stream, id).Error == nil {
-					result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", stream.Name, err))
+					log.Printf("[recorder] stop all: %s 停止失败: %v", stream.Name, err)
 				} else {
-					result.Errors = append(result.Errors, fmt.Sprintf("stream %d: %v", id, err))
+					log.Printf("[recorder] stop all: stream %d 停止失败: %v", id, err)
 				}
-				mu.Unlock()
-				return
 			}
-			mu.Lock()
-			result.Success++
-			mu.Unlock()
 		}(id)
 	}
-
-	wg.Wait()
-	return result
 }
 
 func (s *RecorderService) buildFFmpegArgs(stream *models.Stream, task *models.RecordTask) []string {
@@ -594,7 +548,11 @@ func (s *RecorderService) watchProcess(sp *StreamProcess) {
 	}
 
 	if status == "failed" && s.cfg.RestartOnFailure > 0 && !sp.userStopped.Load() {
-		attempt := s.streamRetryCount(sp.StreamID) + 1
+		s.db.Model(&models.Stream{}).Where("id = ?", sp.StreamID).
+			UpdateColumn("retry_count", gorm.Expr("retry_count + 1"))
+		var stream models.Stream
+		s.db.Select("retry_count").First(&stream, sp.StreamID)
+		attempt := stream.RetryCount
 		if attempt > s.cfg.RestartOnFailure {
 			log.Printf("[recorder] stream %d (%s): 已达最大重试次数 %d，放弃重连",
 				sp.StreamID, sp.StreamName, s.cfg.RestartOnFailure)
@@ -629,8 +587,6 @@ func (s *RecorderService) watchProcess(sp *StreamProcess) {
 				sp.StreamID, sp.StreamName, attempt, extra)
 		}
 
-		s.setRetryCount(sp.StreamID, attempt)
-
 		log.Printf("[recorder] stream %d (%s): 将在 3 秒后自动重连 (第 %d 次)",
 			sp.StreamID, sp.StreamName, attempt)
 		time.Sleep(3 * time.Second)
@@ -661,6 +617,11 @@ func (s *RecorderService) checkHealth() {
 
 	for _, sp := range processes {
 		if sp.userStopped.Load() {
+			continue
+		}
+		if strings.Contains(filepath.Base(sp.OutputPath), "%") {
+			log.Printf("[health] stream %d (%s): 分段录制模式，跳过文件时间检查",
+				sp.StreamID, sp.StreamName)
 			continue
 		}
 		fi, err := os.Stat(sp.OutputPath)

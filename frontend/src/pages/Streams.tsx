@@ -13,30 +13,12 @@ const protocols = ['rtsp', 'rtmp', 'flv', 'hls']
 
 let msgIdCounter = 0
 
-async function mapConcurrent<T, R>(
-  items: T[],
-  fn: (item: T) => Promise<R>,
-  concurrency: number,
-): Promise<R[]> {
-  const results: R[] = []
-  let idx = 0
-  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-    while (idx < items.length) {
-      const i = idx++
-      results[i] = await fn(items[i])
-    }
-  })
-  await Promise.all(workers)
-  return results
-}
-
 export default function Streams() {
   const [streams, setStreams] = useState<Stream[]>([])
   const [groups, setGroups] = useState<Group[]>([])
   const [filterGroupId, setFilterGroupId] = useState('all')
   const [editing, setEditing] = useState<Partial<Stream>>({})
   const [open, setOpen] = useState(false)
-  const [maxParallel, setMaxParallel] = useState(3)
   const [statusMsgs, setStatusMsgs] = useState<StatusMsg[]>([])
   const [exportOpen, setExportOpen] = useState(false)
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
@@ -73,12 +55,6 @@ export default function Streams() {
     loadGroups()
   }, [])
 
-  useEffect(() => {
-    api.config.get().then((cfg) => {
-      if (cfg.max_parallel) setMaxParallel(cfg.max_parallel as number)
-    })
-  }, [])
-
   const filteredStreams = filterGroupId !== 'all'
     ? streams.filter((s) => s.group_id === Number(filterGroupId))
     : streams
@@ -99,49 +75,8 @@ export default function Streams() {
     if (busyRef.current) return
     busyRef.current = true
     try {
-      const allStreams = await api.streams.list()
-      const idle = allStreams.filter(s => s.status !== 'recording')
-      let started = 0
-      let skipped = 0
-
-      const results = await Promise.allSettled(
-        idle.map(async (stream) => {
-          const msgId = addMsg(`正在探测 ${stream.name}...`)
-          try {
-            const probe = await api.streams.probe(stream.id)
-            if (probe.reachable) {
-              return { stream, msgId }
-            } else {
-              updateMsg(msgId, `${stream.name} 不可达，已跳过`, 'error')
-              skipped++
-              return null
-            }
-          } catch {
-            updateMsg(msgId, `${stream.name} 探测失败`, 'error')
-            return null
-          }
-        }),
-      )
-
-      const reachable: { stream: Stream; msgId: number }[] = []
-      for (const r of results) {
-        if (r.status === 'fulfilled' && r.value) reachable.push(r.value)
-      }
-
-      await mapConcurrent(reachable, async ({ stream, msgId }) => {
-        updateMsg(msgId, `正在启动 ${stream.name}...`, 'loading')
-        try {
-          await api.streams.start(stream.id)
-          updateMsg(msgId, `${stream.name} 录制中`, 'success')
-          started++
-        } catch {
-          updateMsg(msgId, `${stream.name} 启动失败`, 'error')
-        }
-      }, maxParallel)
-
-      if (started > 0 || skipped > 0) {
-        addMsg(`全部启动完成: ${started}个录制中, ${skipped}个跳过`, 'success')
-      }
+      await api.streams.startAll()
+      addMsg('全部启动请求已提交', 'success')
       await refreshStreams()
     } finally {
       busyRef.current = false
@@ -188,26 +123,8 @@ export default function Streams() {
     if (busyRef.current) return
     busyRef.current = true
     try {
-      const allStreams = await api.streams.list()
-      const recording = allStreams.filter(s => s.status === 'recording')
-      let stopped = 0
-
-      await Promise.allSettled(
-        recording.map(async (stream) => {
-          const msgId = addMsg(`正在停止 ${stream.name}...`)
-          try {
-            await api.streams.stop(stream.id)
-            updateMsg(msgId, `${stream.name} 已停止`, 'success')
-            stopped++
-          } catch {
-            updateMsg(msgId, `${stream.name} 停止失败`, 'error')
-          }
-        }),
-      )
-
-      if (stopped > 0) {
-        addMsg(`全部停止完成: ${stopped}个已停止`, 'success')
-      }
+      await api.streams.stopAll()
+      addMsg('全部停止请求已提交', 'success')
       await refreshStreams()
     } finally {
       busyRef.current = false

@@ -72,7 +72,7 @@ func main() {
 	recorder.ResetStaleStatuses()
 	logWriter.Info(models.EventSystemStartup, "系统启动 — 端口=%s 录制目录=%s", cfg.Server.Port, cfg.Recorder.StorageLocalPath)
 
-	previewMgr := services.NewPreviewManager(cfg.FFmpeg.Path, "", recorder.GetHardwareEncoder())
+	previewMgr := services.NewPreviewManager(cfg.FFmpeg.Path, recorder.FFprobePath(), recorder.GetHardwareEncoder())
 
 	scheduler.Start()
 	monitor.Start()

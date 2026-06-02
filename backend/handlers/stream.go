@@ -118,13 +118,13 @@ func (h *StreamHandler) Start(c *gin.Context) {
 }
 
 func (h *StreamHandler) StartAll(c *gin.Context) {
-	result := h.recorder.StartAll()
-	c.JSON(http.StatusOK, gin.H{"code": 0, "data": result})
+	h.recorder.StartAll()
+	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "全部启动请求已提交"})
 }
 
 func (h *StreamHandler) StopAll(c *gin.Context) {
-	result := h.recorder.StopAll()
-	c.JSON(http.StatusOK, gin.H{"code": 0, "data": result})
+	h.recorder.StopAll()
+	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "全部停止请求已提交"})
 }
 
 func (h *StreamHandler) Stop(c *gin.Context) {
@@ -228,6 +228,7 @@ func (h *StreamHandler) PreviewWS(c *gin.Context) {
 	}
 
 	if err := h.previewMgr.Subscribe(uint(id), stream.URL, stream.Protocol, conn, cfg); err != nil {
+		conn.Close()
 		log.Printf("preview subscribe failed: %v", err)
 		return
 	}

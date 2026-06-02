@@ -37,7 +37,11 @@ type cachedProbe struct {
 	ts   time.Time
 }
 
-const probeCacheTTL = 60 * time.Second
+const (
+	probeCacheTTL   = 60 * time.Second
+	previewSubChanCap = 8
+	previewReadBufSize = 65536
+)
 
 func NewPreviewManager(ffmpeg, ffprobe, hwEncoder string) *PreviewManager {
 	return &PreviewManager{
@@ -63,18 +67,21 @@ func (pm *PreviewManager) Subscribe(streamID uint, url, protocol string, conn *w
 			streamID:    streamID,
 			subscribers: make(map[*websocket.Conn]chan []byte),
 			done:        make(chan struct{}),
+			ready:       make(chan struct{}),
+			cancel:      func() {},
 		}
 		pm.streams[streamID] = ps
 	}
-	ch := make(chan []byte, 8)
-	ps.mu.Lock()
-	ps.subscribers[conn] = ch
-	atomic.AddInt32(&ps.refCount, 1)
-	ps.mu.Unlock()
-	needStart := !exists
 	pm.mu.Unlock()
 
-	if needStart {
+	if !exists {
+		needCancel := true
+		defer func() {
+			if needCancel {
+				close(ps.ready)
+			}
+		}()
+
 		info := pm.probeSource(url, protocol)
 		if cfg.Width <= 0 {
 			cfg.Width = 640
@@ -105,19 +112,25 @@ func (pm *PreviewManager) Subscribe(streamID uint, url, protocol string, conn *w
 		stdout, err := cmd.StdoutPipe()
 		if err != nil {
 			cancel()
-			pm.cleanup(streamID)
+			pm.mu.Lock()
+			delete(pm.streams, streamID)
+			pm.mu.Unlock()
 			return fmt.Errorf("stdout pipe: %w", err)
 		}
 		stderr, err := cmd.StderrPipe()
 		if err != nil {
 			cancel()
-			pm.cleanup(streamID)
+			pm.mu.Lock()
+			delete(pm.streams, streamID)
+			pm.mu.Unlock()
 			return fmt.Errorf("stderr pipe: %w", err)
 		}
 
 		if err := cmd.Start(); err != nil {
 			cancel()
-			pm.cleanup(streamID)
+			pm.mu.Lock()
+			delete(pm.streams, streamID)
+			pm.mu.Unlock()
 			return fmt.Errorf("ffmpeg start: %w", err)
 		}
 
@@ -125,6 +138,8 @@ func (pm *PreviewManager) Subscribe(streamID uint, url, protocol string, conn *w
 		ps.cancel = cancel
 		ps.url = url
 		ps.protocol = protocol
+		needCancel = false
+		close(ps.ready)
 
 		go func() {
 			errBytes, _ := io.ReadAll(stderr)
@@ -133,13 +148,26 @@ func (pm *PreviewManager) Subscribe(streamID uint, url, protocol string, conn *w
 			}
 		}()
 		go ps.readLoop(stdout)
+	} else {
+		<-ps.ready
+		pm.mu.RLock()
+		_, stillExists := pm.streams[streamID]
+		pm.mu.RUnlock()
+		if !stillExists {
+			return fmt.Errorf("stream %d: ffmpeg failed to start", streamID)
+		}
 	}
+
+	ch := make(chan []byte, previewSubChanCap)
+	ps.mu.Lock()
+	ps.subscribers[conn] = ch
+	atomic.AddInt32(&ps.refCount, 1)
+	ps.mu.Unlock()
 
 	go pm.writeLoop(conn, ch, ps.done)
 	go func() {
 		defer pm.Unsubscribe(streamID, conn)
 		for {
-			conn.SetReadDeadline(time.Now().Add(70 * time.Second))
 			if _, _, err := conn.ReadMessage(); err != nil {
 				return
 			}
@@ -177,20 +205,6 @@ func (pm *PreviewManager) Unsubscribe(streamID uint, conn *websocket.Conn) {
 		}
 	}
 
-	pm.mu.Unlock()
-}
-
-func (pm *PreviewManager) cleanup(streamID uint) {
-	pm.mu.Lock()
-	ps, ok := pm.streams[streamID]
-	if ok {
-		ps.mu.Lock()
-		for _, c := range ps.subscribers {
-			close(c)
-		}
-		ps.mu.Unlock()
-		delete(pm.streams, streamID)
-	}
 	pm.mu.Unlock()
 }
 
@@ -250,11 +264,12 @@ type PreviewStream struct {
 	subscribers map[*websocket.Conn]chan []byte
 	mu          sync.Mutex
 	done        chan struct{}
+	ready       chan struct{}
 }
 
 func (ps *PreviewStream) readLoop(stdout io.Reader) {
 	defer close(ps.done)
-	buf := make([]byte, 65536)
+	buf := make([]byte, previewReadBufSize)
 	for {
 		n, err := stdout.Read(buf)
 		if n > 0 {
