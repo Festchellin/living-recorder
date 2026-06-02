@@ -398,6 +398,10 @@ func (s *RecorderService) buildFFmpegArgs(stream *models.Stream, task *models.Re
 		args = append(args, "-pix_fmt", "yuv420p")
 	}
 	args = append(args, "-c:v", task.VideoCodec)
+	if task.VideoCodec == "libx264" {
+		args = append(args, "-preset", "ultrafast")
+		args = append(args, "-tune", "zerolatency")
+	}
 
 	if task.VideoBitrate != "" {
 		args = append(args, "-b:v", task.VideoBitrate)
@@ -513,16 +517,29 @@ func (s *RecorderService) watchProcess(sp *StreamProcess) {
 		msg = fmt.Sprintf("录制已停止: %s (时长 %d秒)", sp.StreamName, duration)
 	} else if isProcessKilled(err) {
 		status = "failed"
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			errMsg = fmt.Sprintf("exit code %d (%#x)", exitErr.ExitCode(), uint32(exitErr.ExitCode()))
+		sig := exitSignal(err)
+		if name, ok := signalNames[sig]; ok {
+			errMsg = fmt.Sprintf("进程崩溃 (signal %d %s)", sig, name)
+		} else {
+			errMsg = fmt.Sprintf("进程崩溃 (signal %d)", sig)
 		}
 		eventType = models.EventRecordingFailed
 		msg = fmt.Sprintf("录制失败: %s — %s", sp.StreamName, errMsg)
-		log.Printf("[recorder] stream %d (%s) 进程异常退出, code=%s", sp.StreamID, sp.StreamName, errMsg)
+		log.Printf("[recorder] stream %d (%s) 进程异常退出, sig=%d", sp.StreamID, sp.StreamName, sig)
 	} else {
 		status = "failed"
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			errMsg = fmt.Sprintf("exit code %d (%#x)", exitErr.ExitCode(), uint32(exitErr.ExitCode()))
+			code := exitErr.ExitCode()
+			sig := exitSignal(err)
+			if sig != 0 {
+				if name, ok := signalNames[sig]; ok {
+					errMsg = fmt.Sprintf("进程崩溃 (signal %d %s)", sig, name)
+				} else {
+					errMsg = fmt.Sprintf("进程崩溃 (signal %d)", sig)
+				}
+			} else {
+				errMsg = fmt.Sprintf("exit code %d", code)
+			}
 		} else {
 			errMsg = err.Error()
 		}
@@ -571,11 +588,29 @@ func (s *RecorderService) watchProcess(sp *StreamProcess) {
 
 		videoCodec := s.cfg.DefaultVideoCodec
 		audioCodec := s.cfg.DefaultAudioCodec
+		resolution := ""
+		framerate := 0
+		extra := ""
+
 		if s.cfg.RetryWithReEncode && attempt >= 2 {
-			videoCodec = "libx264"
-			audioCodec = "aac"
-			log.Printf("[recorder] stream %d (%s): 第 %d 次重试，降级为重新编码 (%s/%s)",
-				sp.StreamID, sp.StreamName, attempt, videoCodec, audioCodec)
+			if attempt == 2 {
+				extra = "ultrafast 预设"
+				videoCodec = "libx264"
+				audioCodec = "aac"
+			} else if attempt == 3 {
+				extra = "ultrafast + 720p"
+				videoCodec = "libx264"
+				audioCodec = "aac"
+				resolution = "1280x720"
+			} else {
+				extra = "ultrafast + 720p + 15fps"
+				videoCodec = "libx264"
+				audioCodec = "aac"
+				resolution = "1280x720"
+				framerate = 15
+			}
+			log.Printf("[recorder] stream %d (%s): 第 %d 次重试，降级为重新编码 (%s)",
+				sp.StreamID, sp.StreamName, attempt, extra)
 		}
 
 		s.retryCounts.Store(sp.StreamID, attempt)
@@ -589,8 +624,25 @@ func (s *RecorderService) watchProcess(sp *StreamProcess) {
 			OutputTemplate: s.cfg.DefaultOutputTemplate,
 			VideoCodec:     videoCodec,
 			AudioCodec:     audioCodec,
+			Resolution:     resolution,
+			Framerate:      framerate,
 		})
 	}
+}
+
+var signalNames = map[int]string{
+	1: "SIGHUP", 2: "SIGINT", 3: "SIGQUIT", 4: "SIGILL", 6: "SIGABRT",
+	7: "SIGBUS", 8: "SIGFPE", 9: "SIGKILL", 11: "SIGSEGV", 13: "SIGPIPE",
+	14: "SIGALRM", 15: "SIGTERM",
+}
+
+func exitSignal(err error) int {
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		if ws, ok := exitErr.Sys().(interface{ Signal() int }); ok {
+			return ws.Signal()
+		}
+	}
+	return 0
 }
 
 var (
