@@ -9,13 +9,13 @@ import (
 	"gorm.io/gorm"
 )
 
-func Setup(db *gorm.DB, cfg *config.Config, recorder *services.RecorderService, scheduler *services.SchedulerService, monitor *services.MonitorService) *gin.Engine {
+func Setup(db *gorm.DB, cfg *config.Config, recorder *services.RecorderService, scheduler *services.SchedulerService, monitor *services.MonitorService, previewMgr *services.PreviewManager) *gin.Engine {
 	r := gin.New()
 	r.RedirectFixedPath = false
 	r.RedirectTrailingSlash = false
 	r.Use(gin.Logger(), gin.Recovery())
 
-	streamHandler := handlers.NewStreamHandler(db, recorder)
+	streamHandler := handlers.NewStreamHandler(db, recorder, previewMgr)
 	taskHandler := handlers.NewTaskHandler(db, scheduler)
 	statusHandler := handlers.NewStatusHandler(db, cfg, recorder)
 	groupHandler := handlers.NewGroupHandler(db)

@@ -71,11 +71,13 @@ func main() {
 	recorder.ResetStaleStatuses()
 	logWriter.Info(models.EventSystemStartup, "系统启动 — 端口=%s 录制目录=%s", cfg.Server.Port, cfg.Recorder.StorageLocalPath)
 
+	previewMgr := services.NewPreviewManager(cfg.FFmpeg.Path, "", recorder.GetHardwareEncoder())
+
 	scheduler.Start()
 	monitor.Start()
 
 	gin.SetMode(cfg.Server.Mode)
-	r := routes.Setup(db, cfg, recorder, scheduler, monitor)
+	r := routes.Setup(db, cfg, recorder, scheduler, monitor, previewMgr)
 
 	staticFS, _ := fs.Sub(staticFiles, "embed/dist")
 	readStatic := func(name string) ([]byte, error) {
