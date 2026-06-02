@@ -50,10 +50,37 @@ func NewPreviewManager(ffmpeg, ffprobe, hwEncoder string) *PreviewManager {
 
 func (pm *PreviewManager) Subscribe(streamID uint, url, protocol string, conn *websocket.Conn, cfg PreviewConfig) error {
 	pm.mu.Lock()
-
 	ps, exists := pm.streams[streamID]
 	if !exists {
+		ps = &PreviewStream{
+			streamID:    streamID,
+			subscribers: make(map[*websocket.Conn]chan []byte),
+			done:        make(chan struct{}),
+		}
+		pm.streams[streamID] = ps
+	}
+	ch := make(chan []byte, 8)
+	ps.mu.Lock()
+	ps.subscribers[conn] = ch
+	atomic.AddInt32(&ps.refCount, 1)
+	ps.mu.Unlock()
+	needStart := !exists
+	pm.mu.Unlock()
+
+	if needStart {
 		info := pm.probeSource(url, protocol)
+		if cfg.Width <= 0 {
+			cfg.Width = 640
+		}
+		if cfg.Height <= 0 {
+			cfg.Height = 360
+		}
+		if cfg.FPS <= 0 {
+			cfg.FPS = 10
+		}
+		if cfg.CRF <= 0 {
+			cfg.CRF = 35
+		}
 		if info.width > 0 {
 			if cfg.Width > info.width || cfg.Height > info.height {
 				cfg.Width = min(cfg.Width, info.width)
@@ -64,72 +91,48 @@ func (pm *PreviewManager) Subscribe(streamID uint, url, protocol string, conn *w
 			}
 		}
 
+		args := buildFFmpegArgs(url, protocol, cfg, pm.hwEncoder)
 		ctx, cancel := context.WithCancel(context.Background())
-		args := pm.buildFFmpegArgs(url, protocol, cfg)
 		cmd := exec.CommandContext(ctx, pm.ffmpeg, args...)
 
 		stdout, err := cmd.StdoutPipe()
 		if err != nil {
 			cancel()
-			pm.mu.Unlock()
+			pm.cleanup(streamID)
 			return fmt.Errorf("stdout pipe: %w", err)
 		}
-
 		stderr, err := cmd.StderrPipe()
 		if err != nil {
 			cancel()
-			pm.mu.Unlock()
+			pm.cleanup(streamID)
 			return fmt.Errorf("stderr pipe: %w", err)
 		}
 
 		if err := cmd.Start(); err != nil {
 			cancel()
-			pm.mu.Unlock()
+			pm.cleanup(streamID)
 			return fmt.Errorf("ffmpeg start: %w", err)
 		}
+
+		ps.cmd = cmd
+		ps.cancel = cancel
+		ps.url = url
+		ps.protocol = protocol
 
 		go func() {
 			errBytes, _ := io.ReadAll(stderr)
 			if len(errBytes) > 0 {
-				log.Printf("preview stream %d ffmpeg stderr: %s", streamID, string(errBytes))
+				log.Printf("[preview] stream %d ffmpeg stderr: %s", streamID, string(errBytes))
 			}
 		}()
-
-		ps = &PreviewStream{
-			streamID:    streamID,
-			url:         url,
-			protocol:    protocol,
-			cmd:         cmd,
-			cancel:      cancel,
-			subscribers: make(map[*websocket.Conn]chan []byte),
-			done:        make(chan struct{}),
-		}
-		pm.streams[streamID] = ps
-
 		go ps.readLoop(stdout)
 	}
 
-	atomic.AddInt32(&ps.refCount, 1)
-	ch := make(chan []byte, 8)
-	ps.mu.Lock()
-	ps.subscribers[conn] = ch
-	ps.mu.Unlock()
-	pm.mu.Unlock()
-
+	go pm.writeLoop(conn, ch, ps.done)
 	go func() {
-		defer func() {
-			pm.Unsubscribe(streamID, conn)
-		}()
+		defer pm.Unsubscribe(streamID, conn)
 		for {
-			select {
-			case data, ok := <-ch:
-				if !ok {
-					return
-				}
-				if err := conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
-					return
-				}
-			case <-ps.done:
+			if _, _, err := conn.ReadMessage(); err != nil {
 				return
 			}
 		}
@@ -167,6 +170,36 @@ func (pm *PreviewManager) Unsubscribe(streamID uint, conn *websocket.Conn) {
 	}
 
 	pm.mu.Unlock()
+}
+
+func (pm *PreviewManager) cleanup(streamID uint) {
+	pm.mu.Lock()
+	ps, ok := pm.streams[streamID]
+	if ok {
+		ps.mu.Lock()
+		for _, c := range ps.subscribers {
+			close(c)
+		}
+		ps.mu.Unlock()
+		delete(pm.streams, streamID)
+	}
+	pm.mu.Unlock()
+}
+
+func (pm *PreviewManager) writeLoop(conn *websocket.Conn, ch chan []byte, done chan struct{}) {
+	for {
+		select {
+		case data, ok := <-ch:
+			if !ok {
+				return
+			}
+			if err := conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
+				return
+			}
+		case <-done:
+			return
+		}
+	}
 }
 
 func (pm *PreviewManager) StopAll() {
@@ -220,19 +253,19 @@ func (ps *PreviewStream) readLoop(stdout io.Reader) {
 	}
 }
 
-func (pm *PreviewManager) buildFFmpegArgs(url, protocol string, cfg PreviewConfig) []string {
+func buildFFmpegArgs(url, protocol string, cfg PreviewConfig, hwEncoder string) []string {
 	args := []string{}
 	if protocol == "rtsp" {
 		args = append(args, "-rtsp_transport", "tcp")
 	}
-	if pm.hwEncoder == "h264_vaapi" {
+	if hwEncoder == "h264_vaapi" {
 		args = append(args, "-vaapi_device", "/dev/dri/renderD128")
 	}
 	args = append(args, "-i", url)
 	args = append(args, "-fflags", "nobuffer")
 	args = append(args, "-flags", "low_delay")
 
-	switch pm.hwEncoder {
+	switch hwEncoder {
 	case "h264_vaapi":
 		args = append(args, "-c:v", "h264_vaapi")
 		args = append(args, "-vf", fmt.Sprintf("scale=%d:%d,format=nv12,hwupload", cfg.Width, cfg.Height))
@@ -262,7 +295,7 @@ func (pm *PreviewManager) buildFFmpegArgs(url, protocol string, cfg PreviewConfi
 		args = append(args, "-vf", fmt.Sprintf("scale=%d:%d", cfg.Width, cfg.Height))
 	}
 	args = append(args, "-r", fmt.Sprintf("%d", cfg.FPS))
-	if pm.hwEncoder != "h264_videotoolbox" && pm.hwEncoder != "h264_amf" && pm.hwEncoder != "h264_qsv" {
+	if hwEncoder != "h264_videotoolbox" && hwEncoder != "h264_amf" && hwEncoder != "h264_qsv" {
 		args = append(args, "-crf", fmt.Sprintf("%d", cfg.CRF))
 	}
 	args = append(args, "-bsf:v", "dump_extra")

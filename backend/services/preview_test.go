@@ -70,32 +70,6 @@ func newTestWSClient(t *testing.T) (*websocket.Conn, *httptest.Server) {
 	return cli, server
 }
 
-func newTestWSConnRaw(t *testing.T) (*websocket.Conn, *websocket.Conn) {
-	t.Helper()
-	var upgrader = websocket.Upgrader{}
-
-	cliCh := make(chan *websocket.Conn, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		cliCh <- conn
-	}))
-	t.Cleanup(server.Close)
-
-	url := "ws" + server.URL[4:]
-	cli, _, err := websocket.DefaultDialer.Dial(url, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { cli.Close() })
-
-	srv := <-cliCh
-
-	return cli, srv
-}
-
 func TestPreviewManagerSubscribeUnsubscribe(t *testing.T) {
 	dir := t.TempDir()
 	ffmpeg, ffprobe := writeMockBinaries(t, dir)
@@ -118,7 +92,7 @@ func TestPreviewManagerSubscribeUnsubscribe(t *testing.T) {
 	pm.Unsubscribe(1, cli)
 }
 
-func TestPreviewManagerMultiSubscriber(t *testing.T) {
+func TestPreviewManagerMultipleStreams(t *testing.T) {
 	dir := t.TempDir()
 	ffmpeg, ffprobe := writeMockBinaries(t, dir)
 	pm := NewPreviewManager(ffmpeg, ffprobe, "")
@@ -147,6 +121,38 @@ func TestPreviewManagerMultiSubscriber(t *testing.T) {
 
 	for i, cli := range clients {
 		pm.Unsubscribe(uint(i+1), cli)
+	}
+}
+
+func TestPreviewManagerMultiSubscriber(t *testing.T) {
+	dir := t.TempDir()
+	ffmpeg, ffprobe := writeMockBinaries(t, dir)
+	pm := NewPreviewManager(ffmpeg, ffprobe, "")
+
+	var clients []*websocket.Conn
+	for i := 0; i < 3; i++ {
+		cli, _ := newTestWSClient(t)
+		clients = append(clients, cli)
+	}
+
+	cfg := PreviewConfig{Width: 640, Height: 360, FPS: 10, CRF: 35}
+	for _, cli := range clients {
+		if err := pm.Subscribe(1, "rtsp://example.com/stream", "rtsp", cli, cfg); err != nil {
+			t.Fatalf("Subscribe failed: %v", err)
+		}
+	}
+
+	time.Sleep(50 * time.Millisecond)
+
+	for _, cli := range clients {
+		pm.Unsubscribe(1, cli)
+	}
+
+	pm.mu.RLock()
+	_, exists := pm.streams[1]
+	pm.mu.RUnlock()
+	if exists {
+		t.Fatal("expected stream to be removed after all unsubscribes")
 	}
 }
 
