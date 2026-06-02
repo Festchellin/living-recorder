@@ -648,6 +648,58 @@ func (s *RecorderService) watchProcess(sp *StreamProcess) {
 	}
 }
 
+func (s *RecorderService) checkHealth() {
+	s.mu.RLock()
+	processes := make([]*StreamProcess, 0, len(s.streams))
+	for _, sp := range s.streams {
+		processes = append(processes, sp)
+	}
+	s.mu.RUnlock()
+
+	timeout := time.Duration(s.cfg.HealthCheckTimeout) * time.Second
+	if timeout <= 0 {
+		timeout = 120 * time.Second
+	}
+
+	for _, sp := range processes {
+		if sp.userStopped.Load() {
+			continue
+		}
+		fi, err := os.Stat(sp.OutputPath)
+		if err != nil {
+			continue
+		}
+		if time.Since(fi.ModTime()) > timeout {
+			log.Printf("[health] stream %d (%s): 文件 %s 超过 %v 无写入，强制重启",
+				sp.StreamID, sp.StreamName, sp.OutputPath, timeout)
+			if sp.Cmd != nil && sp.Cmd.Process != nil {
+				sp.Cmd.Process.Kill()
+			}
+		}
+	}
+}
+
+func (s *RecorderService) StartHealthCheck(ctx context.Context) {
+	interval := s.cfg.HealthCheckInterval
+	if interval <= 0 {
+		interval = 60
+	}
+	go func() {
+		ticker := time.NewTicker(time.Duration(interval) * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.checkHealth()
+			}
+		}
+	}()
+	log.Printf("[health] 录制健康检测已启动 (间隔=%ds, 超时=%ds)",
+		interval, s.cfg.HealthCheckTimeout)
+}
+
 var signalNames = map[int]string{
 	1: "SIGHUP", 2: "SIGINT", 3: "SIGQUIT", 4: "SIGILL", 6: "SIGABRT",
 	7: "SIGBUS", 8: "SIGFPE", 9: "SIGKILL", 11: "SIGSEGV", 13: "SIGPIPE",

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"io"
 	"io/fs"
@@ -121,6 +122,8 @@ func main() {
 		}
 		c.Data(http.StatusOK, "text/html; charset=utf-8", data)
 	})
+
+	recorder.StartHealthCheck(context.Background())
 
 	addr := ":" + cfg.Server.Port
 	log.Printf("Starting server on %s", addr)
