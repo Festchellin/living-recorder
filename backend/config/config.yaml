@@ -28,7 +28,8 @@ mediamtx:
 recorder:
   max_parallel: 10
   restart_on_failure: 3
-  health_check_interval: 30
+  health_check_interval: 60
+  health_check_timeout: 120
   default_video_codec: "copy"
   default_audio_codec: "copy"
   default_output_template: "{name}/{date}_{time}.mp4"

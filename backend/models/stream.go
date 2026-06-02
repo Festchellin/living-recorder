@@ -10,6 +10,7 @@ type Stream struct {
 	Enabled   bool      `gorm:"default:true" json:"enabled"`
 	Status    string    `gorm:"size:32;default:idle" json:"status"`
 	Remark    string    `gorm:"size:512" json:"remark"`
+	RetryCount int      `gorm:"default:0" json:"retry_count"`
 	GroupID   *uint     `gorm:"index" json:"group_id"`
 	Group     *Group    `gorm:"foreignKey:GroupID" json:"group,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
