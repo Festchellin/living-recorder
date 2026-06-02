@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"gorm.io/gorm"
 )
 
@@ -47,7 +48,6 @@ type RecorderService struct {
 	mu             sync.RWMutex
 	streams        map[uint]*StreamProcess
 	onStatusChange StatusChangeCallback
-	retryCounts    sync.Map
 }
 
 func NewRecorderService(db *gorm.DB, cfg *config.RecorderConfig, ffmpegPath string, store StorageBackend) *RecorderService {
@@ -62,12 +62,28 @@ func NewRecorderService(db *gorm.DB, cfg *config.RecorderConfig, ffmpegPath stri
 	}
 }
 
-func (s *RecorderService) streamRetryCount(streamID uint) int {
-	v, _ := s.retryCounts.Load(streamID)
-	if v == nil {
+func (s *RecorderService) getDiskFreeGB(path string) float64 {
+	var stat unix.Statfs_t
+	if err := unix.Statfs(path, &stat); err != nil {
+		return -1
+	}
+	return float64(stat.Bavail*uint64(stat.Bsize)) / (1 << 30)
+}
+
+func (s *RecorderService) getRetryCount(streamID uint) int {
+	var stream models.Stream
+	if err := s.db.Select("retry_count").First(&stream, streamID).Error; err != nil {
 		return 0
 	}
-	return v.(int)
+	return stream.RetryCount
+}
+
+func (s *RecorderService) setRetryCount(streamID uint, count int) {
+	s.db.Model(&models.Stream{}).Where("id = ?", streamID).Update("retry_count", count)
+}
+
+func (s *RecorderService) streamRetryCount(streamID uint) int {
+	return s.getRetryCount(streamID)
 }
 
 func (s *RecorderService) OnStatusChange(cb StatusChangeCallback) {
@@ -95,6 +111,11 @@ func (s *RecorderService) Start(streamID uint, task *models.RecordTask) error {
 
 	if len(s.streams) >= s.cfg.MaxParallel {
 		return fmt.Errorf("max parallel recordings reached (%d)", s.cfg.MaxParallel)
+	}
+
+	free := s.getDiskFreeGB(s.cfg.StorageLocalPath)
+	if free >= 0 && free < 1.0 {
+		return fmt.Errorf("磁盘空间不足: %.1fGB 可用，需至少 1GB", free)
 	}
 
 	var stream models.Stream
@@ -571,7 +592,7 @@ func (s *RecorderService) watchProcess(sp *StreamProcess) {
 	close(sp.done)
 
 	if status == "success" {
-		s.retryCounts.Delete(sp.StreamID)
+		s.setRetryCount(sp.StreamID, 0)
 	}
 
 	if status == "failed" && s.cfg.RestartOnFailure > 0 && !sp.userStopped.Load() {
@@ -579,7 +600,7 @@ func (s *RecorderService) watchProcess(sp *StreamProcess) {
 		if attempt > s.cfg.RestartOnFailure {
 			log.Printf("[recorder] stream %d (%s): 已达最大重试次数 %d，放弃重连",
 				sp.StreamID, sp.StreamName, s.cfg.RestartOnFailure)
-			s.retryCounts.Delete(sp.StreamID)
+			s.setRetryCount(sp.StreamID, 0)
 			return
 		}
 
@@ -610,7 +631,7 @@ func (s *RecorderService) watchProcess(sp *StreamProcess) {
 				sp.StreamID, sp.StreamName, attempt, extra)
 		}
 
-		s.retryCounts.Store(sp.StreamID, attempt)
+		s.setRetryCount(sp.StreamID, attempt)
 
 		log.Printf("[recorder] stream %d (%s): 将在 3 秒后自动重连 (第 %d 次)",
 			sp.StreamID, sp.StreamName, attempt)
