@@ -49,6 +49,13 @@ func NewPreviewManager(ffmpeg, ffprobe, hwEncoder string) *PreviewManager {
 }
 
 func (pm *PreviewManager) Subscribe(streamID uint, url, protocol string, conn *websocket.Conn, cfg PreviewConfig) error {
+	conn.SetReadLimit(512)
+	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
+
 	pm.mu.Lock()
 	ps, exists := pm.streams[streamID]
 	if !exists {
@@ -132,6 +139,7 @@ func (pm *PreviewManager) Subscribe(streamID uint, url, protocol string, conn *w
 	go func() {
 		defer pm.Unsubscribe(streamID, conn)
 		for {
+			conn.SetReadDeadline(time.Now().Add(70 * time.Second))
 			if _, _, err := conn.ReadMessage(); err != nil {
 				return
 			}
@@ -187,13 +195,27 @@ func (pm *PreviewManager) cleanup(streamID uint) {
 }
 
 func (pm *PreviewManager) writeLoop(conn *websocket.Conn, ch chan []byte, done chan struct{}) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	defer conn.Close()
+
 	for {
 		select {
 		case data, ok := <-ch:
 			if !ok {
 				return
 			}
+			if err := conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+				return
+			}
 			if err := conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
+				return
+			}
+		case <-ticker.C:
+			if err := conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+				return
+			}
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
 		case <-done:

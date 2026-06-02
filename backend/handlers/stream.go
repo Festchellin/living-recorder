@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
 )
 
@@ -227,24 +226,6 @@ func (h *StreamHandler) PreviewWS(c *gin.Context) {
 		FPS:    defaultInt(q.Get("fps"), 10),
 		CRF:    defaultInt(q.Get("crf"), 35),
 	}
-
-	// WS 超时保护
-	conn.SetReadLimit(512)
-	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-		return nil
-	})
-
-	go func() {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-		for range ticker.C {
-			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				return
-			}
-		}
-	}()
 
 	if err := h.previewMgr.Subscribe(uint(id), stream.URL, stream.Protocol, conn, cfg); err != nil {
 		log.Printf("preview subscribe failed: %v", err)
