@@ -382,7 +382,6 @@ func (s *RecorderService) buildFFmpegArgs(stream *models.Stream, task *models.Re
 	case "rtsp":
 		args = append(args, "-rtsp_transport", "tcp")
 		args = append(args, "-rtsp_flags", "prefer_tcp")
-		args = append(args, "-stimeout", "10000000")
 	case "rtmp", "flv":
 		args = append(args, "-fflags", "+nobuffer")
 	case "hls":
