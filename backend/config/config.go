@@ -122,6 +122,7 @@ func (c *Config) Save() error {
 	c.v.Set("recorder.max_parallel", c.Recorder.MaxParallel)
 	c.v.Set("recorder.restart_on_failure", c.Recorder.RestartOnFailure)
 	c.v.Set("recorder.health_check_interval", c.Recorder.HealthCheckInterval)
+	c.v.Set("recorder.health_check_timeout", c.Recorder.HealthCheckTimeout)
 
 	return c.v.WriteConfigAs(c.cfgFile)
 }
