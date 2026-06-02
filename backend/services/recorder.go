@@ -569,18 +569,16 @@ func (s *RecorderService) watchProcess(sp *StreamProcess) {
 		destPath := strings.TrimPrefix(sp.OutputPath, s.cfg.StorageLocalPath)
 		destPath = strings.TrimPrefix(destPath, "/")
 		destPath = strings.TrimPrefix(destPath, "\\")
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		if ctxErr := s.store.Save(ctx, sp.OutputPath, destPath); ctxErr != nil {
-			status = "failed"
-			eventType = models.EventRecordingFailed
-			errMsg = fmt.Sprintf("s3 upload failed: %v", ctxErr)
-			msg += fmt.Sprintf("，S3 上传失败: %v", ctxErr)
-			log.Printf("[recorder] stream %d: s3 upload failed: %v", sp.StreamID, ctxErr)
-		} else {
-			os.Remove(sp.OutputPath)
-			log.Printf("[recorder] stream %d: uploaded to s3, removed local file", sp.StreamID)
-		}
-		cancel()
+		go func(fp string) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			if err := s.store.Save(ctx, fp, destPath); err != nil {
+				log.Printf("[recorder] stream %d: s3 upload failed: %v", sp.StreamID, err)
+				return
+			}
+			os.Remove(fp)
+			log.Printf("[recorder] stream %d: s3 upload completed, removed local file", sp.StreamID)
+		}(sp.OutputPath)
 	}
 
 	s.log.StreamRecordingLog(sp.StreamID, eventType, status, msg, errMsg, sp.OutputPath, fileSize, duration, sp.StartedAt, endedAt)
